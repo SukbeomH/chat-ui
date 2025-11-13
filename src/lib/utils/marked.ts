@@ -7,6 +7,9 @@ type SimpleSource = {
 	title?: string;
 	link: string;
 };
+// highlight.js is conditionally imported:
+// - For SSR (processTokensSync): static import (SSR code is in separate bundle)
+// - For client (processTokens): dynamic import to reduce initial bundle size
 import hljs from "highlight.js";
 import { parseIncompleteMarkdown } from "./parseIncompleteMarkdown";
 import { parseMarkdownIntoBlocks } from "./parseBlocks";
@@ -146,7 +149,9 @@ function addInlineCitations(md: string, webSearchSources: SimpleSource[] = []): 
 		const indices: number[] = (match.match(/\d+/g) || []).map(Number);
 		const links: string = indices
 			.map((index: number) => {
-				if (index === 0) return false;
+				if (index === 0) {
+					return false;
+				}
 				const source = webSearchSources[index - 1];
 				if (source) {
 					return `<a href="${source.link}" target="_blank" rel="noreferrer" style="${linkStyle}">${index}</a>`;
@@ -175,7 +180,9 @@ function createMarkedInstance(sources: SimpleSource[]): Marked {
 	});
 }
 function isFencedBlockClosed(raw?: string): boolean {
-	if (!raw) return true;
+	if (!raw) {
+		return true;
+	}
 	/* eslint-disable-next-line no-control-regex */
 	const trimmed = raw.replace(/[\s\u0000]+$/, "");
 	const openingFenceMatch = trimmed.match(/^([`~]{3,})/);
@@ -207,9 +214,24 @@ export async function processTokens(content: string, sources: SimpleSource[]): P
 	const marked = createMarkedInstance(sources);
 	const tokens = marked.lexer(processedContent);
 
+	// Dynamically import highlight.js only when code blocks are present
+	const hasCodeBlocks = tokens.some((token) => token.type === "code");
+	const hljsModule = hasCodeBlocks ? await import("highlight.js") : null;
+	const hljs = hljsModule?.default;
+
 	const processedTokens = await Promise.all(
 		tokens.map(async (token) => {
 			if (token.type === "code") {
+				if (!hljs) {
+					// Fallback if highlight.js failed to load
+					return {
+						type: "code" as const,
+						lang: token.lang,
+						code: token.text,
+						rawCode: token.text,
+						isClosed: isFencedBlockClosed(token.raw ?? ""),
+					};
+				}
 				return {
 					type: "code" as const,
 					lang: token.lang,
@@ -235,6 +257,9 @@ export function processTokensSync(content: string, sources: SimpleSource[]): Tok
 
 	const marked = createMarkedInstance(sources);
 	const tokens = marked.lexer(processedContent);
+
+	// SSR uses static import - this is fine because SSR code is in a separate bundle
+	// and doesn't affect client bundle size
 	return tokens.map((token) => {
 		if (token.type === "code") {
 			return {

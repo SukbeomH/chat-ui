@@ -28,7 +28,9 @@
 
 	function save() {
 		const trimmed = (newTitle ?? "").trim();
-		if (!trimmed) return;
+		if (!trimmed) {
+			return;
+		}
 		onsave?.({ title: trimmed });
 		close();
 	}

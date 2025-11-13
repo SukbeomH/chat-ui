@@ -51,10 +51,14 @@
 	});
 
 	function withLeafId(url: string | null): string | null {
-		if (!url) return url;
+		if (!url) {
+			return url;
+		}
 		try {
 			const leafId = localStorage.getItem("leafId");
-			if (!leafId) return url;
+			if (!leafId) {
+				return url;
+			}
 			const u = new URL(url);
 			u.searchParams.set("leafId", leafId);
 			return u.toString();
