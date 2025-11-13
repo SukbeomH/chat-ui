@@ -19,7 +19,11 @@ import type { TextGenerationContext } from "$lib/server/textGeneration/types";
 import { logger } from "$lib/server/logger.js";
 import { AbortRegistry } from "$lib/server/abortRegistry";
 import { MetricsServer } from "$lib/server/metrics";
-import { callSecurityApi, mergeSecurityApiConfig } from "$lib/server/security/securityApi";
+import {
+	callSecurityApi,
+	mergeSecurityApiConfig,
+	generateDummyResponseMessage,
+} from "$lib/server/security/securityApi";
 import { endpoints } from "$lib/server/endpoints/endpoints";
 import { config } from "$lib/server/config";
 
@@ -465,6 +469,7 @@ export async function POST({
 			let finalLlmResponse: unknown = null;
 			let llmResponseTime = 0;
 			let llmIsDummy = false;
+			let securityApiBlocked = false;
 			const llmStartTime = Date.now();
 
 			try {
@@ -500,17 +505,24 @@ export async function POST({
 
 					// securityResponse = securityApiResult.response; // Unused, kept for future use
 
-					// Send status update: Security API responded
-					await update({
-						type: MessageUpdateType.Status,
-						status: MessageUpdateStatus.SecurityApiResponded,
-						message: securityApiResult.isDummy
-							? "Security API 응답 수신 (더미)"
-							: "Security API 응답 수신",
-					});
-
 					// Handle security API response
 					if (securityApiResult.error) {
+						// Security API error occurred - mark as blocked and continue to LLM
+						securityApiBlocked = true;
+
+						// Send status update: Security API blocked/error
+						const isBlocked =
+							securityApiResult.error.toLowerCase().includes("block") ||
+							securityApiResult.error.toLowerCase().includes("차단");
+						await update({
+							type: MessageUpdateType.Status,
+							status: isBlocked
+								? MessageUpdateStatus.SecurityApiBlocked
+								: MessageUpdateStatus.SecurityApiError,
+							message: isBlocked ? "Security API 차단됨" : "Security API 에러 발생",
+						});
+
+						// Send debug info
 						await update({
 							type: MessageUpdateType.Debug,
 							originalRequest: originalRequest as {
@@ -526,7 +538,17 @@ export async function POST({
 							error: securityApiResult.error,
 							totalTime: Date.now() - totalStartTime,
 						});
-						throw new Error(`Security API error: ${securityApiResult.error}`);
+
+						// Continue to LLM request instead of throwing
+					} else {
+						// Send status update: Security API responded successfully
+						await update({
+							type: MessageUpdateType.Status,
+							status: MessageUpdateStatus.SecurityApiResponded,
+							message: securityApiResult.isDummy
+								? "Security API 응답 수신 (더미)"
+								: "Security API 응답 수신",
+						});
 					}
 
 					// If security API returned a response, use it to modify messages
@@ -649,9 +671,13 @@ export async function POST({
 						const messageForLlm = messagesForPrompt[messagesForPrompt.length - 1];
 						const userMessageContent =
 							messageForLlm?.from === "user" ? messageForLlm.content : undefined;
-						const dummyLlmResponse = userMessageContent
-							? `[LLM 더미 응답] LLM API가 사용 불가능하여 더미 응답을 반환합니다. 사용자 메시지: "${userMessageContent}"`
-							: "[LLM 더미 응답] LLM API가 사용 불가능하여 더미 응답을 반환합니다.";
+
+						// If Security API was blocked, use securityApiBlocked message; otherwise use llmFailed
+						const dummyLlmResponse = securityApiBlocked
+							? generateDummyResponseMessage("securityApiBlocked")
+							: generateDummyResponseMessage("llmFailed", {
+									userMessage: userMessageContent,
+								});
 
 						// Stream the dummy LLM response token by token
 						const tokens = dummyLlmResponse.split(" ");
@@ -769,8 +795,7 @@ export async function POST({
 					}
 				} else {
 					// Return dummy response instead of error when generation fails
-					const dummyResponse =
-						"This is a dummy response. The actual model service is not available, but you can still test the UI functionality.";
+					const dummyResponse = generateDummyResponseMessage("generalError");
 
 					// Stream the dummy response token by token for realistic behavior
 					const tokens = dummyResponse.split(" ");
@@ -804,8 +829,7 @@ export async function POST({
 				// check if no output was generated
 				if (!hasError && !abortedByUser && messageToWriteTo.content === initialMessageContent) {
 					// Return dummy response if no output was generated
-					const dummyResponse =
-						"This is a dummy response. The actual model service is not available, but you can still test the UI functionality.";
+					const dummyResponse = generateDummyResponseMessage("generalError");
 
 					// Stream the dummy response token by token
 					const tokens = dummyResponse.split(" ");

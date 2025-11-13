@@ -29,6 +29,8 @@ export enum MessageUpdateStatus {
 	KeepAlive = "keepAlive",
 	SecurityApiRequesting = "securityApiRequesting",
 	SecurityApiResponded = "securityApiResponded",
+	SecurityApiBlocked = "securityApiBlocked",
+	SecurityApiError = "securityApiError",
 	LlmRequesting = "llmRequesting",
 	LlmResponded = "llmResponded",
 }
