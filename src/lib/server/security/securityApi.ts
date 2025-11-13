@@ -155,6 +155,32 @@ export async function callSecurityApi(
 }
 
 /**
+ * Generate dummy response message based on the reason
+ * @param reason - The reason for the dummy response
+ * @param context - Optional context (e.g., user message)
+ * @returns A clear dummy response message
+ */
+export function generateDummyResponseMessage(
+	reason: "securityApiBlocked" | "llmFailed" | "generalError",
+	context?: { userMessage?: string }
+): string {
+	switch (reason) {
+		case "securityApiBlocked":
+			return "[Security API 차단] Security API가 요청을 차단했습니다. LLM API도 사용할 수 없어 더미 응답을 반환합니다.";
+		case "llmFailed": {
+			const userMsg = context?.userMessage;
+			return userMsg
+				? `[LLM 실패] LLM API가 사용 불가능하여 더미 응답을 반환합니다. 사용자 메시지: "${userMsg}"`
+				: "[LLM 실패] LLM API가 사용 불가능하여 더미 응답을 반환합니다.";
+		}
+		case "generalError":
+			return "[시스템 오류] 모델 서비스가 사용 불가능하여 더미 응답을 반환합니다.";
+		default:
+			return "[시스템 오류] 모델 서비스가 사용 불가능하여 더미 응답을 반환합니다.";
+	}
+}
+
+/**
  * Merge security API settings from conversation meta and global settings
  * Priority: conversation meta > global settings
  * Returns config even if URL or API key is missing (for dummy mode)

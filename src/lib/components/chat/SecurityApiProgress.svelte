@@ -3,6 +3,7 @@
 	import { MessageUpdateType, MessageUpdateStatus } from "$lib/types/MessageUpdate";
 	import IconLoading from "../icons/IconLoading.svelte";
 	import CarbonCheckmark from "~icons/carbon/checkmark";
+	import CarbonError from "~icons/carbon/error";
 
 	interface Props {
 		updates: MessageUpdate[];
@@ -13,6 +14,9 @@
 	// Track Security API progress states
 	let securityApiRequesting = $state(false);
 	let securityApiResponded = $state(false);
+	let securityApiBlocked = $state(false);
+	let securityApiError = $state(false);
+	let securityApiStatusMessage = $state<string | undefined>(undefined);
 	let llmRequesting = $state(false);
 	let llmResponded = $state(false);
 	let isDummyResponse = $state(false);
@@ -21,6 +25,9 @@
 	$effect(() => {
 		securityApiRequesting = false;
 		securityApiResponded = false;
+		securityApiBlocked = false;
+		securityApiError = false;
+		securityApiStatusMessage = undefined;
 		llmRequesting = false;
 		llmResponded = false;
 		isDummyResponse = false;
@@ -32,6 +39,14 @@
 				} else if (update.status === MessageUpdateStatus.SecurityApiResponded) {
 					securityApiRequesting = false;
 					securityApiResponded = true;
+				} else if (update.status === MessageUpdateStatus.SecurityApiBlocked) {
+					securityApiRequesting = false;
+					securityApiBlocked = true;
+					securityApiStatusMessage = update.message;
+				} else if (update.status === MessageUpdateStatus.SecurityApiError) {
+					securityApiRequesting = false;
+					securityApiError = true;
+					securityApiStatusMessage = update.message;
 				} else if (update.status === MessageUpdateStatus.LlmRequesting) {
 					llmRequesting = true;
 				} else if (update.status === MessageUpdateStatus.LlmResponded) {
@@ -47,7 +62,7 @@
 	});
 </script>
 
-{#if securityApiRequesting || securityApiResponded || llmRequesting || llmResponded}
+{#if securityApiRequesting || securityApiResponded || securityApiBlocked || securityApiError || llmRequesting || llmResponded}
 	<div
 		class="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs dark:border-blue-800 dark:bg-blue-900/20"
 	>
@@ -66,6 +81,8 @@
 			<div class="flex items-center gap-2">
 				{#if securityApiRequesting}
 					<IconLoading classNames="h-4 w-4" />
+				{:else if securityApiBlocked || securityApiError}
+					<CarbonError class="h-4 w-4 text-red-600 dark:text-red-400" />
 				{:else if securityApiResponded}
 					<CarbonCheckmark class="h-4 w-4 text-green-600 dark:text-green-400" />
 				{:else}
@@ -74,15 +91,19 @@
 				<span
 					class="text-xs {securityApiRequesting
 						? 'text-blue-600 dark:text-blue-400'
-						: securityApiResponded
-							? 'text-green-600 dark:text-green-400'
-							: 'text-gray-500 dark:text-gray-400'}"
+						: securityApiBlocked || securityApiError
+							? 'text-red-600 dark:text-red-400'
+							: securityApiResponded
+								? 'text-green-600 dark:text-green-400'
+								: 'text-gray-500 dark:text-gray-400'}"
 				>
 					Security API {securityApiRequesting
 						? "요청 중..."
-						: securityApiResponded
-							? "응답 수신"
-							: "대기 중"}
+						: securityApiBlocked || securityApiError
+							? securityApiStatusMessage || "에러 발생"
+							: securityApiResponded
+								? "응답 수신"
+								: "대기 중"}
 				</span>
 			</div>
 

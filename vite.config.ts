@@ -55,6 +55,7 @@ export default defineConfig({
 		],
 	},
 	build: {
+		chunkSizeWarningLimit: 1500, // Increase limit to 1.5MB (default is 500KB)
 		rollupOptions: {
 			onwarn(warning, warn) {
 				// Suppress warnings from external dependencies about unused imports
@@ -64,6 +65,15 @@ export default defineConfig({
 					(warning.source?.includes("elysia") ||
 						warning.source?.includes("exact-mirror") ||
 						warning.source?.includes("@sinclair/typebox"))
+				) {
+					return;
+				}
+				// Suppress SvelteKit/Svelte version compatibility warnings
+				// These are known issues with Svelte 5 and don't affect functionality
+				if (
+					warning.code === "UNRESOLVED_IMPORT" &&
+					warning.source?.includes("@sveltejs/kit") &&
+					(warning.id?.includes("fork") || warning.id?.includes("settled"))
 				) {
 					return;
 				}
@@ -79,7 +89,17 @@ export default defineConfig({
 
 					// Vendor chunks for large libraries
 					if (id.includes("node_modules")) {
-						// Markdown and text processing
+						// SvelteKit (check first to avoid conflicts)
+						if (id.includes("@sveltejs")) {
+							return "vendor-svelte-kit";
+						}
+						// Svelte core framework (must check after @sveltejs)
+						if (id.includes("node_modules/svelte") && !id.includes("@sveltejs")) {
+							return "vendor-svelte-core";
+						}
+
+						// Markdown and text processing - keep together for better caching
+						// (marked, katex, highlight.js, dompurify are often used together)
 						if (
 							id.includes("marked") ||
 							id.includes("highlight.js") ||
@@ -100,21 +120,22 @@ export default defineConfig({
 							return "vendor-openai";
 						}
 
-						// UI libraries
-						if (
-							id.includes("svelte") ||
-							id.includes("@sveltejs") ||
-							id.includes("unplugin-icons")
-						) {
-							return "vendor-svelte";
+						// Icons
+						if (id.includes("unplugin-icons") || id.includes("@iconify")) {
+							return "vendor-icons";
 						}
 
-						// Other large dependencies
+						// Large utility libraries - split only the largest ones
+						if (id.includes("zod")) {
+							return "vendor-zod";
+						}
+						// Group date-fns and other utilities together
 						if (
 							id.includes("date-fns") ||
 							id.includes("nanoid") ||
 							id.includes("superjson") ||
-							id.includes("zod")
+							id.includes("uuid") ||
+							id.includes("clsx")
 						) {
 							return "vendor-utils";
 						}
