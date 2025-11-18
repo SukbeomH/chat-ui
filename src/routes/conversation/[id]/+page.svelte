@@ -138,6 +138,23 @@
 		messageId?: ReturnType<typeof v4>;
 		isRetry?: boolean;
 	}): Promise<void> {
+		// Buffer variables declared outside try block for access in catch
+		let buffer = "";
+		let lastUpdateTime = new Date();
+		let messageToWriteTo: Message | undefined = undefined;
+		// Track if title was updated and saved during this message stream
+		let titleUpdated = false;
+		let savedTitle: string | undefined = undefined;
+
+		// Helper function to flush buffer to message content
+		const flushBuffer = () => {
+			if (buffer.length > 0 && messageToWriteTo) {
+				messageToWriteTo.content += buffer;
+				buffer = "";
+				lastUpdateTime = new Date();
+			}
+		};
+
 		try {
 			$isAborted = false;
 			$loading = true;
@@ -237,7 +254,7 @@
 			}
 
 			const userMessage = messages.find((message) => message.id === messageId);
-			const messageToWriteTo = messages.find((message) => message.id === messageToWriteToId);
+			messageToWriteTo = messages.find((message) => message.id === messageToWriteToId);
 			if (!messageToWriteTo) {
 				throw new Error("Message to write to not found");
 			}
@@ -245,13 +262,27 @@
 			const messageUpdatesAbortController = new AbortController();
 
 			// Prepare conversation data for server
+			// 제목이 "New Chat"이 아니고, 실제로 사용자 메시지가 있는 경우에만 기존 제목 유지
+			// 그 외의 경우 서버에서 제목 생성 가능하도록 "New Chat"으로 설정
+			const hasUserMessage = messages.some((m) => m.from === "user");
+			let conversationTitle: string = "New Chat";
+			if (
+				data.title &&
+				data.title !== "" &&
+				data.title !== "New Chat" &&
+				hasUserMessage &&
+				typeof data.title === "string"
+			) {
+				conversationTitle = data.title;
+			}
+
 			const conversationData: Conversation = {
 				id: page.params.id,
 				model: data.model,
-				title: data.title,
+				title: conversationTitle,
 				messages,
 				rootMessageId: data.rootMessageId,
-				preprompt: data.preprompt,
+				preprompt: effectivePreprompt,
 				meta: data.meta,
 				createdAt: data.updatedAt,
 				updatedAt: new Date(),
@@ -269,7 +300,12 @@
 					globalSettings: {
 						securityApiEnabled: $settings.securityApiEnabled,
 						securityApiUrl: $settings.securityApiUrl,
-						securityApiKey: $settings.securityApiKey,
+						securityExternalApi: $settings.securityExternalApi,
+						securityAimGuardType: $settings.securityAimGuardType,
+						securityAimGuardProjectId: $settings.securityAimGuardProjectId,
+						securityAprismApiType: $settings.securityAprismApiType,
+						securityAprismType: $settings.securityAprismType,
+						securityAprismExcludeLabels: $settings.securityAprismExcludeLabels,
 						llmApiUrl: $settings.llmApiUrl,
 						llmApiKey: $settings.llmApiKey,
 					},
@@ -283,13 +319,15 @@
 			}
 
 			files = [];
-			let buffer = "";
-			// Initialize lastUpdateTime outside the loop to persist between updates
-			let lastUpdateTime = new Date();
+			// Reset buffer and lastUpdateTime for new message stream
+			buffer = "";
+			lastUpdateTime = new Date();
 
 			for await (const update of messageUpdatesIterator) {
 				if ($isAborted) {
 					messageUpdatesAbortController.abort();
+					// Flush buffer before aborting
+					flushBuffer();
 					return;
 				}
 
@@ -318,10 +356,19 @@
 						lastUpdateTime = currentTime;
 					}
 					pending = false;
+				} else if (update.type === MessageUpdateType.FinalAnswer) {
+					// Flush any remaining buffer before setting final answer
+					flushBuffer();
+					// Set the final answer text and interrupted flag
+					messageToWriteTo.content = update.text;
+					messageToWriteTo.interrupted = update.interrupted;
+					pending = false;
 				} else if (
 					update.type === MessageUpdateType.Status &&
 					update.status === MessageUpdateStatus.Error
 				) {
+					// Flush buffer before handling error
+					flushBuffer();
 					// Check if this is a 402 payment required error
 					if (update.statusCode === 402) {
 						showSubscribeModal = true;
@@ -339,6 +386,28 @@
 						title: update.title,
 						convId: page.params.id,
 					};
+
+					// 제목 업데이트 시 즉시 저장하여 데이터 손실 방지
+					if (browser) {
+						try {
+							await saveConversation({
+								id: page.params.id,
+								model: data.model,
+								title: update.title,
+								messages,
+								rootMessageId: data.rootMessageId,
+								preprompt: data.preprompt,
+								meta: data.meta,
+								updatedAt: new Date(),
+								createdAt: data.updatedAt || new Date(),
+							});
+							// 제목이 저장되었음을 표시
+							titleUpdated = true;
+							savedTitle = update.title;
+						} catch (err) {
+							console.error("Failed to save conversation title:", err);
+						}
+					}
 				} else if (update.type === MessageUpdateType.File) {
 					messageToWriteTo.files = [
 						...(messageToWriteTo.files ?? []),
@@ -352,7 +421,12 @@
 					};
 				}
 			}
+
+			// Flush any remaining buffer after stream ends
+			flushBuffer();
 		} catch (err) {
+			// Flush buffer before handling error to prevent message loss
+			flushBuffer();
 			if (err instanceof Error && err.message.includes("overloaded")) {
 				$error = "Too much traffic, please try again.";
 			} else if (err instanceof Error && err.message.includes("429")) {
@@ -365,13 +439,21 @@
 			console.error(err);
 		} finally {
 			// Save conversation to IndexedDB after message updates
+			// 제목은 이미 업데이트 시 저장되었으므로, 저장된 제목을 사용
 			if (browser) {
 				try {
 					const now = new Date();
+					// 제목이 이미 저장되었다면 저장된 제목을 사용, 그렇지 않으면 data.title 사용
+					let titleToSave: string;
+					if (titleUpdated && savedTitle !== undefined) {
+						titleToSave = savedTitle;
+					} else {
+						titleToSave = data.title ?? "New Chat";
+					}
 					await saveConversation({
 						id: page.params.id,
 						model: data.model,
-						title: data.title,
+						title: titleToSave,
 						messages,
 						rootMessageId: data.rootMessageId,
 						preprompt: data.preprompt,
@@ -414,6 +496,12 @@
 	}
 
 	onMount(async () => {
+		// Clear error state for new conversations without user messages
+		const hasUserMessages = messages.some((msg) => msg.from === "user");
+		if (!hasUserMessages) {
+			error.set(undefined);
+		}
+
 		if ($pendingMessage) {
 			files = $pendingMessage.files;
 			await writeMessage({ prompt: $pendingMessage.content });
@@ -515,6 +603,11 @@
 	let messagesPath = $derived(createMessagesPath(messages));
 	const messagesAlternatives = $derived(createMessagesAlternatives(messages));
 
+	// Determine preprompt: conversation-specific override or global setting
+	const effectivePreprompt = $derived(
+		data.preprompt ?? $settings.customPrompts?.[data.model] ?? undefined
+	);
+
 	// Create conversation object for ChatWindow
 	const conversation = $derived<Conversation>({
 		id: page.params.id,
@@ -551,6 +644,9 @@
 			});
 			// Update local data
 			data.meta = updatedConversation.meta;
+			if (updates.preprompt !== undefined) {
+				data.preprompt = updatedConversation.preprompt;
+			}
 		} catch (err) {
 			console.error("Failed to update conversation:", err);
 		}
@@ -596,7 +692,7 @@
 	messages={messagesPath as Message[]}
 	{messagesAlternatives}
 	shared={data.shared}
-	preprompt={data.preprompt}
+	preprompt={effectivePreprompt}
 	bind:files
 	onmessage={onMessage}
 	onretry={onRetry}

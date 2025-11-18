@@ -12,6 +12,9 @@
 	import { pendingMessage } from "$lib/stores/pendingMessage";
 	import { sanitizeUrlParam } from "$lib/utils/urlParams";
 	import { loadAttachmentsFromUrls } from "$lib/utils/loadAttachmentsFromUrls";
+	import { saveConversation } from "$lib/storage/conversations";
+	import { v4 } from "uuid";
+	import { browser } from "$app/environment";
 
 	const { data } = $props();
 
@@ -44,7 +47,33 @@
 				return;
 			}
 
-			const { conversationId } = await res.json();
+			const { conversationId, modelId: serverModelId } = await res.json();
+
+			// Create and save conversation to IndexedDB
+			if (browser) {
+				const now = new Date();
+				const rootMessageId = v4();
+				await saveConversation({
+					id: conversationId,
+					model: serverModelId,
+					title: "New Chat",
+					rootMessageId,
+					messages: [
+						{
+							id: rootMessageId,
+							from: "system",
+							content: $settings.customPrompts[serverModelId] || "",
+							createdAt: now,
+							updatedAt: now,
+							children: [],
+							ancestors: [],
+						},
+					],
+					preprompt: $settings.customPrompts[serverModelId],
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
 
 			// Ugly hack to use a store as temp storage, feel free to improve ^^
 			pendingMessage.set({

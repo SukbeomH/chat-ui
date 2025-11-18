@@ -7,6 +7,7 @@
 	import CarbonClose from "~icons/carbon/close";
 	import CarbonEdit from "~icons/carbon/edit";
 	import type { ConvSidebar } from "$lib/types/ConvSidebar";
+	import type { Model } from "$lib/types/Model";
 
 	import EditConversationModal from "$lib/components/EditConversationModal.svelte";
 	import { requireAuthUser } from "$lib/utils/auth";
@@ -33,7 +34,35 @@
 		return `${year}-${month}-${day} ${hours}:${minutes}`;
 	}
 
-	const formattedDateTime = $derived(formatDateTime(conv.updatedAt));
+	const formattedDateTime = $derived(formatDateTime(conv.createdAt));
+
+	// Get model display name
+	const modelDisplayName = $derived.by(() => {
+		if (!conv.model || !page.data.models) {
+			return null;
+		}
+		const model = (page.data.models as Model[]).find((m) => m.id === conv.model);
+		return model?.displayName ?? conv.model;
+	});
+
+	// Get security API display text
+	const securityApiText = $derived.by(() => {
+		return conv.securityExternalApi ?? "NONE";
+	});
+
+	// Get security API color class based on type
+	const securityApiColorClass = $derived.by(() => {
+		const apiType = conv.securityExternalApi ?? "NONE";
+		switch (apiType) {
+			case "APRISM":
+				return "text-purple-600 dark:text-purple-400";
+			case "AIM":
+				return "text-green-600 dark:text-green-400";
+			case "NONE":
+			default:
+				return "text-gray-500 dark:text-gray-400";
+		}
+	});
 </script>
 
 <a
@@ -42,17 +71,29 @@
 		confirmDelete = false;
 	}}
 	href="{base}/conversation/{conv.id}"
-	class="group flex h-[2.15rem] flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 max-sm:h-10
+	class="group flex min-h-[2.15rem] flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 max-sm:min-h-10
 		{conv.id === page.params.id ? 'bg-gray-100 dark:bg-gray-700' : ''}"
 >
 	<div class="my-2 min-w-0 flex-1 truncate first-letter:uppercase">
-		<span>
-			{#if confirmDelete}
-				<span class="mr-1 font-semibold"> Delete? </span>
+		<div class="flex flex-col">
+			<span>
+				{#if confirmDelete}
+					<span class="mr-1 font-semibold"> Delete? </span>
+				{/if}
+				{conv.title}
+				<span class="ml-1.5 text-xs text-gray-400 dark:text-gray-500">- {formattedDateTime}</span>
+			</span>
+			{#if modelDisplayName || securityApiText}
+				<div class="mt-0.5 flex flex-wrap gap-1.5 text-[0.7rem]">
+					{#if modelDisplayName}
+						<span class="text-blue-600 dark:text-blue-400 font-medium">{modelDisplayName}</span>
+					{/if}
+					{#if securityApiText}
+						<span class="{securityApiColorClass} font-medium">{securityApiText}</span>
+					{/if}
+				</div>
 			{/if}
-			{conv.title}
-			<span class="ml-1.5 text-xs text-gray-400 dark:text-gray-500">- {formattedDateTime}</span>
-		</span>
+		</div>
 	</div>
 
 	{#if !readOnly}

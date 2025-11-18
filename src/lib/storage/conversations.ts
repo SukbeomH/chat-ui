@@ -7,8 +7,10 @@ export async function getConversations(page: number = 0): Promise<
 		id: string;
 		title: string;
 		updatedAt: Date;
+		createdAt: Date;
 		model: string;
 		modelId: string;
+		securityExternalApi?: "AIM" | "APRISM" | "NONE";
 	}>
 > {
 	const conversations = await storage.getConversations();
@@ -20,8 +22,10 @@ export async function getConversations(page: number = 0): Promise<
 		id: conv.id,
 		title: conv.title,
 		updatedAt: conv.updatedAt,
+		createdAt: conv.createdAt,
 		model: conv.model,
 		modelId: conv.model,
+		securityExternalApi: conv.meta?.securityExternalApi,
 	}));
 }
 

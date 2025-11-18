@@ -13,7 +13,12 @@ type MessageUpdateRequestOptions = {
 	globalSettings?: {
 		securityApiEnabled?: boolean;
 		securityApiUrl?: string;
-		securityApiKey?: string;
+		securityExternalApi?: "AIM" | "APRISM" | "NONE";
+		securityAimGuardType?: "both" | "input" | "output";
+		securityAimGuardProjectId?: string;
+		securityAprismApiType?: "identifier" | "risk-detector";
+		securityAprismType?: "both" | "input" | "output";
+		securityAprismExcludeLabels?: string;
 		llmApiUrl?: string;
 		llmApiKey?: string;
 	};

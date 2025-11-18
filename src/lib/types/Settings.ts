@@ -27,10 +27,17 @@ export interface Settings extends Timestamps {
 	disableStream: boolean;
 	directPaste: boolean;
 
-	// Security API settings
+	// Security Proxy Handler settings
 	securityApiEnabled?: boolean;
 	securityApiUrl?: string;
-	securityApiKey?: string;
+	securityExternalApi?: "AIM" | "APRISM" | "NONE";
+	// AIM Guard settings
+	securityAimGuardType?: "both" | "input" | "output";
+	securityAimGuardProjectId?: string;
+	// aprism settings
+	securityAprismApiType?: "identifier" | "risk-detector";
+	securityAprismType?: "both" | "input" | "output";
+	securityAprismExcludeLabels?: string; // 콤마로 구분된 문자열
 
 	// LLM API override settings
 	llmApiUrl?: string;
@@ -50,7 +57,12 @@ export const DEFAULT_SETTINGS = {
 	directPaste: false,
 	securityApiEnabled: false,
 	securityApiUrl: "",
-	securityApiKey: "",
+	securityExternalApi: "NONE",
+	securityAimGuardType: "both",
+	securityAimGuardProjectId: "default",
+	securityAprismApiType: "identifier",
+	securityAprismType: "both",
+	securityAprismExcludeLabels: "",
 	llmApiUrl: "",
 	llmApiKey: "",
 } satisfies SettingsEditable;

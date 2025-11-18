@@ -19,7 +19,10 @@ import type { TextGenerationContext } from "$lib/server/textGeneration/types";
 import { logger } from "$lib/server/logger.js";
 import { AbortRegistry } from "$lib/server/abortRegistry";
 import { MetricsServer } from "$lib/server/metrics";
-import { callSecurityApi, mergeSecurityApiConfig } from "$lib/server/security/securityApi";
+import {
+	callSecurityApi,
+	mergeSecurityApiConfig,
+} from "$lib/server/security/securityApi";
 import { endpoints } from "$lib/server/endpoints/endpoints";
 import { config } from "$lib/server/config";
 
@@ -59,7 +62,12 @@ export async function POST({
 	let globalSettings: {
 		securityApiEnabled?: boolean;
 		securityApiUrl?: string;
-		securityApiKey?: string;
+		securityExternalApi?: "AIM" | "APRISM" | "NONE";
+		securityAimGuardType?: "both" | "input" | "output";
+		securityAimGuardProjectId?: string;
+		securityAprismApiType?: "identifier" | "risk-detector";
+		securityAprismType?: "both" | "input" | "output";
+		securityAprismExcludeLabels?: string;
 		llmApiUrl?: string;
 		llmApiKey?: string;
 	} = {};
@@ -69,7 +77,12 @@ export async function POST({
 				.object({
 					securityApiEnabled: z.boolean().optional(),
 					securityApiUrl: z.string().optional(),
-					securityApiKey: z.string().optional(),
+					securityExternalApi: z.enum(["AIM", "APRISM", "NONE"]).optional(),
+					securityAimGuardType: z.enum(["both", "input", "output"]).optional(),
+					securityAimGuardProjectId: z.string().optional(),
+					securityAprismApiType: z.enum(["identifier", "risk-detector"]).optional(),
+					securityAprismType: z.enum(["both", "input", "output"]).optional(),
+					securityAprismExcludeLabels: z.string().optional(),
 					llmApiUrl: z.string().optional(),
 					llmApiKey: z.string().optional(),
 				})
@@ -97,7 +110,12 @@ export async function POST({
 							fromShareId: z.string().optional(),
 							securityApiEnabled: z.boolean().optional(),
 							securityApiUrl: z.string().optional(),
-							securityApiKey: z.string().optional(),
+							securityExternalApi: z.enum(["AIM", "APRISM", "NONE"]).optional(),
+							securityAimGuardType: z.enum(["both", "input", "output"]).optional(),
+							securityAimGuardProjectId: z.string().optional(),
+							securityAprismApiType: z.enum(["identifier", "risk-detector"]).optional(),
+							securityAprismType: z.enum(["both", "input", "output"]).optional(),
+							securityAprismExcludeLabels: z.string().optional(),
 							llmApiUrl: z.string().optional(),
 							llmApiKey: z.string().optional(),
 						})
@@ -454,12 +472,7 @@ export async function POST({
 
 			// Security API call and timing
 			const totalStartTime = Date.now();
-			let securityApiResult: {
-				response: Awaited<ReturnType<typeof callSecurityApi>>["response"];
-				securityResponseTime: number;
-				error?: string;
-				isDummy?: boolean;
-			} | null = null;
+			let securityApiResult: Awaited<ReturnType<typeof callSecurityApi>> | null = null;
 			let originalRequest: unknown = null;
 			let llmRequest: unknown = null;
 			let finalLlmResponse: unknown = null;
@@ -529,20 +542,88 @@ export async function POST({
 						throw new Error(`Security API error: ${securityApiResult.error}`);
 					}
 
-					// If security API returned a response, use it to modify messages
-					// Security API response content should be sent to LLM (both real and dummy responses)
-					if (securityApiResult.response?.choices?.[0]?.message?.content) {
-						// Security API returned a response - use its content for LLM
-						const securityApiContent = securityApiResult.response.choices[0].message.content;
-						// Update the last user message with Security API response content
-						if (messagesForPrompt.length > 0) {
-							const lastMessage = messagesForPrompt[messagesForPrompt.length - 1];
-							if (lastMessage.from === "user") {
-								messagesForPrompt = [
-									...messagesForPrompt.slice(0, -1),
-									{ ...lastMessage, content: securityApiContent },
-								];
+					// Process input_security_api_response from security_proxied_data
+					const securityProxiedData = securityApiResult.securityProxiedData;
+					const inputResponse = securityProxiedData?.input_security_api_response;
+
+					if (inputResponse?.data) {
+						const action = inputResponse.data.action;
+						const maskedText = inputResponse.data.masked_text;
+
+						// Handle BLOCKING action
+						if (action === "BLOCKING") {
+							const blockMessage = "요청하신 내용이 보안 정책을 위반하여 처리할 수 없습니다.";
+							await update({
+								type: MessageUpdateType.Debug,
+								originalRequest: originalRequest as {
+									model?: string;
+									messages?: unknown[];
+									[key: string]: unknown;
+								},
+								securityResponse: {
+									action: "block",
+									reason: "Security API blocked the request",
+								},
+								securityResponseTime: securityApiResult.securityResponseTime,
+								error: blockMessage,
+								totalTime: Date.now() - totalStartTime,
+							});
+							throw error(400, {
+								message: blockMessage,
+								type: "invalid_request_error",
+								code: "content_filter",
+							});
+						}
+
+						// Handle MASKING action
+						if (action === "MASKING" && maskedText) {
+							if (messagesForPrompt.length > 0) {
+								const lastMessage = messagesForPrompt[messagesForPrompt.length - 1];
+								if (lastMessage.from === "user") {
+									messagesForPrompt = [
+										...messagesForPrompt.slice(0, -1),
+										{ ...lastMessage, content: maskedText },
+									];
+								}
 							}
+						}
+
+						// Handle aprism Identifier API: use abstracted text if available
+						if (inputResponse.data.type === "identifier" && inputResponse.data.data?.abstracted) {
+							if (messagesForPrompt.length > 0) {
+								const lastMessage = messagesForPrompt[messagesForPrompt.length - 1];
+								if (lastMessage.from === "user") {
+									messagesForPrompt = [
+										...messagesForPrompt.slice(0, -1),
+										{ ...lastMessage, content: inputResponse.data.data.abstracted },
+									];
+								}
+							}
+						}
+
+						// Handle aprism Risk Detector API: UNSAFE면 차단
+						if (inputResponse.data.type === "risk-detector" && inputResponse.data.data?.label === "UNSAFE") {
+							const blockMessage = "요청하신 내용이 보안 정책을 위반하여 처리할 수 없습니다.";
+							await update({
+								type: MessageUpdateType.Debug,
+								originalRequest: originalRequest as {
+									model?: string;
+									messages?: unknown[];
+									[key: string]: unknown;
+								},
+								securityResponse: {
+									action: "block",
+									reason: "aprism Risk Detector detected UNSAFE content",
+								},
+								securityResponseTime: securityApiResult.securityResponseTime,
+								error: blockMessage,
+								totalTime: Date.now() - totalStartTime,
+							});
+							throw error(400, {
+								message: blockMessage,
+								type: "invalid_request_error",
+								code: "content_filter",
+							});
 						}
 					}
 				}
@@ -702,6 +783,66 @@ export async function POST({
 					}
 				}
 
+				// Process output_security_api_response from security_proxied_data (after LLM response)
+				if (securityConfig && securityApiResult?.securityProxiedData) {
+					const outputResponse = securityApiResult.securityProxiedData.output_security_api_response;
+					if (outputResponse?.data) {
+						const action = outputResponse.data.action;
+						const maskedText = outputResponse.data.masked_text;
+
+						// Handle BLOCKING action: replace response content with block message
+						if (action === "BLOCKING") {
+							const blockMessage = "응답 내용이 보안 정책을 위반하여 표시할 수 없습니다.";
+							// Replace the last assistant message content
+							if (messageToWriteTo.content !== initialMessageContent) {
+								messageToWriteTo.content = blockMessage;
+								await update({
+									type: MessageUpdateType.FinalAnswer,
+									text: blockMessage,
+									interrupted: false,
+								});
+							}
+						}
+
+						// Handle MASKING action: replace with masked text
+						if (action === "MASKING" && maskedText) {
+							if (messageToWriteTo.content !== initialMessageContent) {
+								messageToWriteTo.content = maskedText;
+								await update({
+									type: MessageUpdateType.FinalAnswer,
+									text: maskedText,
+									interrupted: false,
+								});
+							}
+						}
+
+						// Handle aprism Identifier API: use abstracted text if available
+						if (outputResponse.data.type === "identifier" && outputResponse.data.data?.abstracted) {
+							if (messageToWriteTo.content !== initialMessageContent) {
+								messageToWriteTo.content = outputResponse.data.data.abstracted;
+								await update({
+									type: MessageUpdateType.FinalAnswer,
+									text: outputResponse.data.data.abstracted,
+									interrupted: false,
+								});
+							}
+						}
+
+						// Handle aprism Risk Detector API: UNSAFE면 차단
+						if (outputResponse.data.type === "risk-detector" && outputResponse.data.data?.label === "UNSAFE") {
+							const blockMessage = "응답 내용이 보안 정책을 위반하여 표시할 수 없습니다.";
+							if (messageToWriteTo.content !== initialMessageContent) {
+								messageToWriteTo.content = blockMessage;
+								await update({
+									type: MessageUpdateType.FinalAnswer,
+									text: blockMessage,
+									interrupted: false,
+								});
+							}
+						}
+					}
+				}
+
 				// Send debug info if security API was used
 				if (securityConfig && securityApiResult) {
 					const totalTime = Date.now() - totalStartTime;
@@ -722,6 +863,7 @@ export async function POST({
 								}
 							: undefined,
 						securityResponseTime: securityApiResult.securityResponseTime,
+						securityProxiedData: securityApiResult.securityProxiedData,
 						llmRequest: llmRequest as {
 							model?: string;
 							messages?: unknown[];

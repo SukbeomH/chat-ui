@@ -13,10 +13,18 @@ export interface Conversation extends Timestamps {
 
 	meta?: {
 		fromShareId?: string;
-		// Conversation-specific API settings (override global settings)
+		// Security Proxy Handler settings (대화별 오버라이드)
 		securityApiEnabled?: boolean;
 		securityApiUrl?: string;
-		securityApiKey?: string;
+		securityExternalApi?: "AIM" | "APRISM" | "NONE";
+		// AIM Guard settings
+		securityAimGuardType?: "both" | "input" | "output";
+		securityAimGuardProjectId?: string;
+		// aprism settings
+		securityAprismApiType?: "identifier" | "risk-detector";
+		securityAprismType?: "both" | "input" | "output";
+		securityAprismExcludeLabels?: string; // 콤마로 구분된 문자열
+		// LLM API settings
 		llmApiUrl?: string;
 		llmApiKey?: string;
 	};

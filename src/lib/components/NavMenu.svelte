@@ -104,7 +104,9 @@
 				id: conv.id,
 				title: conv.title,
 				updatedAt: conv.updatedAt instanceof Date ? conv.updatedAt : new Date(conv.updatedAt),
+				createdAt: conv.createdAt instanceof Date ? conv.createdAt : new Date(conv.createdAt),
 				model: conv.model,
+				securityExternalApi: conv.securityExternalApi,
 			}));
 
 			if (convSidebar.length === 0) {

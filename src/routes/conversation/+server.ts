@@ -73,13 +73,16 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Generate conversation ID - client will save to IndexedDB
 	const conversationId = nanoid();
 
+	const actualModelId = model.id || model.name;
+
 	if (MetricsServer.isEnabled()) {
-		MetricsServer.getMetrics().model.conversationsTotal.inc({ model: values.model });
+		MetricsServer.getMetrics().model.conversationsTotal.inc({ model: actualModelId });
 	}
 
 	return new Response(
 		JSON.stringify({
 			conversationId,
+			modelId: actualModelId,
 		}),
 		{ headers: { "Content-Type": "application/json" } }
 	);

@@ -11,10 +11,16 @@
 	import CarbonChat from "~icons/carbon/chat";
 	import CarbonCode from "~icons/carbon/code";
 
-	import { goto } from "$app/navigation";
+	import { goto, invalidate } from "$app/navigation";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 	import Switch from "$lib/components/Switch.svelte";
 	import { PROVIDERS_HUB_ORGS } from "@huggingface/inference";
+	import { error, ERROR_MESSAGES } from "$lib/stores/errors";
+	import { UrlDependency } from "$lib/types/UrlDependency";
+	import { saveConversation, getConversation } from "$lib/storage/conversations";
+	import { v4 } from "uuid";
+	import { browser } from "$app/environment";
+	import { tick } from "svelte";
 
 	const publicConfig = usePublicConfig();
 	const settings = useSettingsStore();
@@ -36,10 +42,10 @@
 	const providerList: RouterProvider[] = $derived((model?.providers ?? []) as RouterProvider[]);
 
 	// Initialize multimodal override for this model if not set yet
+	// Default behavior is true (handled in ChatWindow), but we initialize here for UI consistency
 	$effect(() => {
 		if (model) {
-			// Default to the model's advertised capability
-			settings.initValue("multimodalOverrides", page.params.model, !!model.multimodal);
+			settings.initValue("multimodalOverrides", page.params.model, true);
 		}
 	});
 
@@ -47,6 +53,86 @@
 	$effect(() => {
 		settings.initValue("hidePromptExamples", page.params.model, false);
 	});
+
+	async function createNewConversation() {
+		try {
+			// Set active model first
+			settings.instantSet({
+				activeModel: page.params.model,
+			});
+
+			// Create new conversation
+			const res = await fetch(`${base}/conversation`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: page.params.model,
+					preprompt: $settings.customPrompts[page.params.model],
+				}),
+			});
+
+			if (!res.ok) {
+				const errorMessage = (await res.json()).message || ERROR_MESSAGES.default;
+				error.set(errorMessage);
+				console.error("Error while creating conversation: ", errorMessage);
+				return;
+			}
+
+			const { conversationId, modelId } = await res.json();
+
+			// Save conversation to IndexedDB
+			if (browser) {
+				const now = new Date();
+				const rootMessageId = v4();
+				await saveConversation({
+					id: conversationId,
+					model: modelId,
+					title: "New Chat",
+					rootMessageId,
+					messages: [
+						{
+							id: rootMessageId,
+							from: "system",
+							content: $settings.customPrompts[modelId] || "",
+							createdAt: now,
+							updatedAt: now,
+							children: [],
+							ancestors: [],
+						},
+					],
+					preprompt: $settings.customPrompts[modelId],
+					createdAt: now,
+					updatedAt: now,
+				});
+
+				// Verify that the conversation was saved successfully
+				// Retry up to 3 times with a short delay
+				for (let i = 0; i < 3; i++) {
+					const saved = await getConversation(conversationId);
+					if (saved) {
+						break;
+					}
+					// Wait a bit before retrying
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
+
+				// Give the browser a moment to ensure IndexedDB write is complete
+				await tick();
+			}
+
+			// Invalidate conversation list and conversation to ensure data is reloaded
+			await invalidate(UrlDependency.ConversationList);
+			await invalidate(UrlDependency.Conversation);
+
+			// Navigate to the new conversation
+			await goto(`${base}/conversation/${conversationId}`);
+		} catch (err) {
+			error.set((err as Error).message || ERROR_MESSAGES.default);
+			console.error("Failed to create conversation:", err);
+		}
+	}
 </script>
 
 <div class="flex flex-col items-start">
@@ -67,12 +153,9 @@
 		<button
 			class="flex w-fit items-center rounded-full bg-black px-3 py-1.5 text-sm !text-white shadow-sm hover:bg-black/90 dark:bg-white/80 dark:!text-gray-900 dark:hover:bg-white/90"
 			name="Activate model"
-			onclick={(e) => {
+			onclick={async (e) => {
 				e.stopPropagation();
-				settings.instantSet({
-					activeModel: page.params.model,
-				});
-				goto(`${base}/`);
+				await createNewConversation();
 			}}
 		>
 			<CarbonChat class="mr-1.5 text-sm" />

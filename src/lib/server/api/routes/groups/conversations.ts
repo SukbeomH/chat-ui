@@ -1,4 +1,4 @@
-import { Elysia, error, t } from "elysia";
+import { Elysia, status, t } from "elysia";
 import { authPlugin } from "$api/authPlugin";
 
 export const conversationGroup = new Elysia().use(authPlugin).group("/conversations", (app) => {
@@ -8,7 +8,7 @@ export const conversationGroup = new Elysia().use(authPlugin).group("/conversati
 				as: "scoped",
 				beforeHandle: async ({ locals }) => {
 					if (!locals.user?._id && !locals.sessionId) {
-						return error(401, "Must have a valid session or user");
+						throw status(401, "Must have a valid session or user");
 					}
 				},
 			})

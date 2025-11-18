@@ -2,9 +2,9 @@ module.exports = {
 	root: true,
 	parser: "@typescript-eslint/parser",
 	extends: [
-		"eslint:recommended",
 		"plugin:@typescript-eslint/recommended",
 		"plugin:svelte/recommended",
+		"eslint:recommended",
 		"prettier",
 	],
 	plugins: ["@typescript-eslint"],
@@ -17,6 +17,18 @@ module.exports = {
 				parser: "@typescript-eslint/parser",
 			},
 		},
+		{
+			files: ["*.ts", "*.tsx"],
+			rules: {
+				"no-undef": "off", // TypeScript가 타입 체크를 수행하므로 비활성화
+			},
+		},
+		{
+			files: ["*.js", "*.jsx"],
+			rules: {
+				"no-undef": "error", // JavaScript 파일에 대해서는 활성화
+			},
+		},
 	],
 	parserOptions: {
 		sourceType: "module",
@@ -26,6 +38,7 @@ module.exports = {
 	rules: {
 		"no-empty": "off",
 		"require-yield": "off",
+		"no-undef": "off", // TypeScript가 타입 체크를 수행하므로 비활성화
 		"@typescript-eslint/no-explicit-any": "error",
 		"@typescript-eslint/no-non-null-assertion": "error",
 		"@typescript-eslint/no-unused-vars": [
@@ -52,5 +65,23 @@ module.exports = {
 		browser: true,
 		es2017: true,
 		node: true,
+	},
+	globals: {
+		HeadersInit: "readonly",
+		AbortSignal: "readonly",
+		AbortController: "readonly",
+		FormData: "readonly",
+		File: "readonly",
+		Response: "readonly",
+		Request: "readonly",
+		ReadableStream: "readonly",
+		TextDecoderStream: "readonly",
+		Buffer: "readonly",
+		fetch: "readonly",
+		setTimeout: "readonly",
+		clearTimeout: "readonly",
+		console: "readonly",
+		NodeJS: "readonly",
+		App: "readonly",
 	},
 };

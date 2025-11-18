@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { goto, replaceState } from "$app/navigation";
+	import { goto, replaceState, invalidate } from "$app/navigation";
 	import { base } from "$app/paths";
 	import { page } from "$app/state";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
+	import { UrlDependency } from "$lib/types/UrlDependency";
 
 	const publicConfig = usePublicConfig();
 
@@ -61,7 +62,7 @@
 				return;
 			}
 
-			const { conversationId } = await res.json();
+			const { conversationId, modelId } = await res.json();
 
 			// Create and save conversation to IndexedDB
 			if (browser) {
@@ -69,21 +70,21 @@
 				const rootMessageId = v4();
 				await saveConversation({
 					id: conversationId,
-					model,
+					model: modelId,
 					title: "New Chat",
 					rootMessageId,
 					messages: [
 						{
 							id: rootMessageId,
 							from: "system",
-							content: $settings.customPrompts[model] || "",
+							content: $settings.customPrompts[modelId] || "",
 							createdAt: now,
 							updatedAt: now,
 							children: [],
 							ancestors: [],
 						},
 					],
-					preprompt: $settings.customPrompts[model],
+					preprompt: $settings.customPrompts[modelId],
 					createdAt: now,
 					updatedAt: now,
 				});
@@ -95,8 +96,9 @@
 				files,
 			});
 
-			// invalidateAll to update list of conversations
-			await goto(`${base}/conversation/${conversationId}`, { invalidateAll: true });
+			// Invalidate conversation list to trigger reload in layout
+			await invalidate(UrlDependency.ConversationList);
+			await goto(`${base}/conversation/${conversationId}`);
 		} catch (err) {
 			error.set((err as Error).message || ERROR_MESSAGES.default);
 			console.error(err);

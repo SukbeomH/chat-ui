@@ -154,8 +154,8 @@
 	const lastIsError = $derived(
 		lastMessage &&
 			!loading &&
-			(lastMessage.from === "user" ||
-				lastMessage.updates?.findIndex((u) => u.type === "status" && u.status === "error") !== -1)
+			lastMessage.from === "user" &&
+			lastMessage.updates?.findIndex((u) => u.type === "status" && u.status === "error") !== -1
 	);
 
 	const streamingAssistantMessage = $derived(
@@ -241,10 +241,10 @@
 	const settings = useSettingsStore();
 	const hideRouterExamples = $derived($settings.hidePromptExamples?.[currentModel.id] ?? false);
 
-	// Respect per‑model multimodal toggle from settings (force enable)
+	// Respect per‑model multimodal toggle from settings (default to true)
 	const modelIsMultimodalOverride = $derived($settings.multimodalOverrides?.[currentModel.id]);
 	const modelIsMultimodal = $derived(
-		(modelIsMultimodalOverride ?? currentModel.multimodal) === true
+		(modelIsMultimodalOverride ?? true) === true
 	);
 	const activeMimeTypes = $derived(
 		Array.from(
@@ -474,15 +474,13 @@
 
 		<div class="w-full">
 			<div class="flex w-full *:mb-3">
-				{#if !loading && lastIsError}
+				{#if !loading && lastIsError && lastMessage && lastMessage.ancestors?.length}
 					<RetryBtn
 						classNames="ml-auto"
 						onClick={() => {
-							if (lastMessage && lastMessage.ancestors) {
-								onretry?.({
-									id: lastMessage.id,
-								});
-							}
+							onretry?.({
+								id: lastMessage.id,
+							});
 						}}
 					/>
 				{/if}
