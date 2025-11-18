@@ -187,7 +187,23 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
       "processing_time": 0.5,
       ...
     },
-    "timestamp": "2025-01-XX..."
+    "timestamp": "2025-01-XX...",
+    "timing": {
+      "call_start": 1234567890.124,
+      "call_end": 1234567890.625,
+      "duration": 0.501
+    }
+  },
+  "llm_request": {
+    "model": "gpt-3.5-turbo",
+    "messages": [...],
+    "headers": {...},
+    "metadata": {...}
+  },
+  "llm_response": {
+    "id": "chatcmpl-...",
+    "choices": [...],
+    "usage": {...}
   },
   "output_security_api_response": {
     "status": "success",
@@ -197,12 +213,12 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
       "masked_text": "...",
       ...
     },
-    "timestamp": "2025-01-XX..."
-  },
-  "llm_response": {
-    "id": "chatcmpl-...",
-    "choices": [...],
-    "usage": {...}
+    "timestamp": "2025-01-XX...",
+    "timing": {
+      "call_start": 1234567891.001,
+      "call_end": 1234567891.502,
+      "duration": 0.501
+    }
   },
   "timing": {
     "pre_call_start": 1234567890.123,
@@ -234,14 +250,38 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
 | :--- | :--- | :--- |
 | `original_request` | object | 원본 LLM 요청 데이터 (보안 API 헤더 제외) |
 | `input_security_api_response` | object | input 보안 API 응답 (있는 경우) |
-| `output_security_api_response` | object | output 보안 API 응답 (있는 경우) |
+| `llm_request` | object | 보안 검증 후 LLM에 전달된 수정된 요청 (있는 경우) |
 | `llm_response` | object | LLM 응답 데이터 |
+| `output_security_api_response` | object | output 보안 API 응답 (있는 경우) |
 | `timing` | object | 시간 측정 정보 (초 단위) |
 | `metadata` | object | 메타데이터 |
 | `aim_guard_details` | object | AIM Guard 세부 응답 필드 (AIM Guard 사용 시에만 포함) |
 | `aprism_details` | object | aprism 세부 응답 필드 (aprism 사용 시에만 포함) |
 
 **하위 호환성**: `external_api_response` 필드도 포함됩니다 (input 응답과 동일).
+
+### 필드 포함 조건
+
+각 필드는 다음 조건에 따라 포함됩니다:
+
+| 필드 | 포함 조건 |
+|:---|:---|
+| `original_request` | 항상 포함 |
+| `llm_response` | 항상 포함 |
+| `timing` | 항상 포함 |
+| `metadata` | 항상 포함 |
+| `input_security_api_response` | input 검증 수행 시만 포함 |
+| `llm_request` | input 검증 수행 시만 포함 |
+| `output_security_api_response` | output 검증 수행 시만 포함 |
+| `external_api_response` | input 검증 수행 시만 포함 (하위 호환성) |
+| `aim_guard_details` | AIM Guard 사용 시에만 포함 |
+| `aprism_details` | aprism 사용 시에만 포함 |
+
+**참고**:
+- `input_security_api_response`는 `x-{api}-type` 헤더가 "input" 또는 "both"일 때 포함됩니다.
+- `llm_request`는 `input_security_api_response`가 포함될 때 함께 포함됩니다 (보안 검증 후 수정된 요청).
+- `output_security_api_response`는 `x-{api}-type` 헤더가 "output" 또는 "both"일 때 포함됩니다.
+- `aim_guard_details`와 `aprism_details`는 각각 해당 보안 API를 사용할 때만 포함되며, input/output 중 하나만 검증한 경우 해당 필드만 포함됩니다.
 
 ### timing 필드 설명
 
@@ -281,7 +321,12 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
     "pii_detection": {},
     "detected_items": {}
   },
-  "timestamp": "2025-01-XX..."
+  "timestamp": "2025-01-XX...",
+  "timing": {
+    "call_start": 1234567890.124,
+    "call_end": 1234567890.625,
+    "duration": 0.501
+  }
 }
 ```
 
@@ -387,7 +432,12 @@ AIM Guard를 사용하는 경우, `security_proxied_data`에 `aim_guard_details`
       "original": "전화번호는 010-1234-5678 입니다"
     }
   },
-  "timestamp": "2025-01-XX..."
+  "timestamp": "2025-01-XX...",
+  "timing": {
+    "call_start": 1234567890.124,
+    "call_end": 1234567890.625,
+    "duration": 0.501
+  }
 }
 ```
 
@@ -415,7 +465,12 @@ Identifier API의 output 응답은 input과 동일한 구조를 가집니다:
       "original": "문의는 test@example.com로 연락주세요"
     }
   },
-  "timestamp": "2025-01-XX..."
+  "timestamp": "2025-01-XX...",
+  "timing": {
+    "call_start": 1234567891.001,
+    "call_end": 1234567891.502,
+    "duration": 0.501
+  }
 }
 ```
 
@@ -434,7 +489,12 @@ Identifier API의 output 응답은 input과 동일한 구조를 가집니다:
       "score": 0.95
     }
   },
-  "timestamp": "2025-01-XX..."
+  "timestamp": "2025-01-XX...",
+  "timing": {
+    "call_start": 1234567890.124,
+    "call_end": 1234567890.625,
+    "duration": 0.501
+  }
 }
 ```
 
@@ -1060,6 +1120,21 @@ A: `response.security_proxied_data.timing` 필드에서 확인 가능합니다.
 ### Q: 여러 보안 API를 동시에 사용할 수 있나요?
 
 A: 현재는 한 번에 하나의 보안 API만 사용 가능합니다. `x-external-api` 헤더로 명시적으로 선택하거나, 헤더가 없으면 API 키 헤더로 자동 감지됩니다. 두 API 키가 모두 제공되면 AIM Guard가 우선 선택됩니다 (단, `x-external-api` 헤더가 최우선).
+
+## 구현 참고
+
+### 응답 구조 생성 위치
+
+`security_proxied_data` 필드는 `security_proxy_handler.py`의 다음 메서드에서 생성됩니다:
+
+- **`_build_structured_response`** (2507-2581줄): 구조화된 응답 딕셔너리 생성
+- **`async_post_call_success_hook`** (2583-2676줄): LLM 응답 객체에 `security_proxied_data` 속성 추가
+
+### 주요 구현 세부사항
+
+- 응답 구조는 `_build_structured_response` 메서드에서 생성되며, 보안 API 타입(AIM Guard 또는 aprism)에 따라 `aim_guard_details` 또는 `aprism_details` 필드가 조건부로 추가됩니다.
+- 세부 정보 추출은 `SecurityResponseAdapter` 추상 클래스와 구현체(`AIMGuardAdapter`, `AprismIdentifierAdapter`, `AprismRiskDetectorAdapter`)를 통해 수행됩니다.
+- 시간 측정 정보는 `metadata._timing`에 저장되며, 최종 응답 구조의 `timing` 필드로 변환됩니다.
 
 ## 지원 및 문의
 
