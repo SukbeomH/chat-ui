@@ -474,7 +474,7 @@ export async function POST({
 			const totalStartTime = Date.now();
 			let securityApiResult: Awaited<ReturnType<typeof callSecurityApi>> | null = null;
 			let originalRequest: unknown = null;
-			let llmRequest: unknown = null;
+			// llmRequest는 securityProxiedData.llm_request에서 추출됨
 			let finalLlmResponse: unknown = null;
 			let llmResponseTime = 0;
 			let llmIsDummy = false;
@@ -668,22 +668,7 @@ export async function POST({
 						abortController: ctrl,
 					};
 
-					// Prepare LLM request (for debug info)
-					// Store only the user message that will be sent to LLM (after Security API processing)
-					// This includes any modifications made by Security API (if Security API modified the message)
-					const lastUserMessageForLlm = messagesForPrompt[messagesForPrompt.length - 1];
-					llmRequest = {
-						model: model.id ?? model.name,
-						messages:
-							lastUserMessageForLlm?.from === "user"
-								? [
-										{
-											role: "user" as const,
-											content: lastUserMessageForLlm.content,
-										},
-									]
-								: [],
-					};
+					// LLM request는 securityProxiedData.llm_request에서 추출됨
 
 					// Send status update: LLM requesting (only if Security API is enabled)
 					if (securityConfig) {
@@ -846,6 +831,30 @@ export async function POST({
 				// Send debug info if security API was used
 				if (securityConfig && securityApiResult) {
 					const totalTime = Date.now() - totalStartTime;
+					const securityProxiedData = securityApiResult.securityProxiedData;
+
+					// Extract timing information (convert seconds to milliseconds)
+					const inputSecurityApiDuration = securityProxiedData?.timing?.input_security_api_duration
+						? securityProxiedData.timing.input_security_api_duration * 1000
+						: undefined;
+					const outputSecurityApiDuration = securityProxiedData?.timing?.output_security_api_duration
+						? securityProxiedData.timing.output_security_api_duration * 1000
+						: undefined;
+
+					// Extract input and output security API responses
+					const inputSecurityApiResponse = securityProxiedData?.input_security_api_response;
+					const outputSecurityApiResponse = securityProxiedData?.output_security_api_response;
+
+					// Extract LLM request from security_proxied_data (보안 검증 후 LLM에 전달된 수정된 요청)
+					// llm_request는 input_security_api_response가 있을 때만 포함됨
+					const securityProxiedLlmRequest = securityProxiedData?.llm_request;
+
+					// Extract LLM response from security_proxied_data
+					const llmResponse = securityProxiedData?.llm_response;
+
+					// Get final response content (after security API processing)
+					const finalResponse = messageToWriteTo.content;
+
 					await update({
 						type: MessageUpdateType.Debug,
 						originalRequest: originalRequest as {
@@ -863,12 +872,14 @@ export async function POST({
 								}
 							: undefined,
 						securityResponseTime: securityApiResult.securityResponseTime,
+						inputSecurityApiResponse,
+						outputSecurityApiResponse,
+						inputSecurityApiDuration,
+						outputSecurityApiDuration,
+						securityProxiedLlmRequest,
+						llmResponse,
+						finalResponse,
 						securityProxiedData: securityApiResult.securityProxiedData,
-						llmRequest: llmRequest as {
-							model?: string;
-							messages?: unknown[];
-							[key: string]: unknown;
-						},
 						finalLlmResponse: finalLlmResponse as {
 							id?: string;
 							choices?: unknown[];

@@ -1,4 +1,5 @@
 import type { InferenceProvider } from "@huggingface/inference";
+import type { SecurityApiCallResponse } from "$lib/server/security/securityApi";
 
 export type MessageUpdate =
 	| MessageStatusUpdate
@@ -98,13 +99,12 @@ export interface MessageDebugUpdate {
 		modifiedKwargs?: Record<string, unknown>;
 	};
 	securityResponseTime?: number;
-	llmRequest?: {
-		model?: string;
-		messages?: unknown[];
-		stream?: boolean;
-		_stream_overridden?: boolean;
-		[key: string]: unknown;
-	};
+	inputSecurityApiResponse?: SecurityApiCallResponse;
+	outputSecurityApiResponse?: SecurityApiCallResponse;
+	inputSecurityApiDuration?: number; // ms
+	outputSecurityApiDuration?: number; // ms
+	securityProxiedLlmRequest?: unknown; // security_proxied_data.llm_request (보안 검증 후 LLM에 전달된 수정된 요청)
+	llmResponse?: unknown; // security_proxied_data.llm_response
 	finalLlmResponse?: {
 		id?: string;
 		choices?: unknown[];
@@ -112,8 +112,10 @@ export interface MessageDebugUpdate {
 		usage?: unknown;
 		[key: string]: unknown;
 	};
+	finalResponse?: string; // 최종 반환된 메시지 내용 (보안 심사 후 수정된 응답)
 	llmResponseTime?: number;
 	totalTime?: number;
 	error?: string;
 	isDummyResponse?: boolean;
+	securityProxiedData?: unknown; // 전체 security_proxied_data 참조용
 }

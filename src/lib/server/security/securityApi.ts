@@ -57,6 +57,11 @@ export interface SecurityApiCallResponse {
 	timestamp?: string;
 	traceback?: string;
 	reason?: string;
+	timing?: {
+		call_start?: number;
+		call_end?: number;
+		duration?: number;
+	};
 }
 
 /**
@@ -134,8 +139,9 @@ export interface AprismDetails {
 export interface SecurityProxiedData {
 	original_request?: unknown;
 	input_security_api_response?: SecurityApiCallResponse;
-	output_security_api_response?: SecurityApiCallResponse;
+	llm_request?: unknown; // 보안 검증 후 LLM에 전달된 수정된 요청
 	llm_response?: unknown;
+	output_security_api_response?: SecurityApiCallResponse;
 	timing?: TimingInfo;
 	metadata?: unknown;
 	aim_guard_details?: AimGuardDetails;
