@@ -42,23 +42,17 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Allow dummy model even if not in models list
 	let model = models.find((m) => (m.id || m.name) === values.model);
 	if (!model && values.model === dummyModelId) {
-		// Dummy model is allowed
-		model = {
-			id: dummyModelId,
-			name: dummyModelId,
-			displayName: "Dummy Model",
-			unlisted: false,
-		} as typeof model;
+		// Dummy model is allowed - use first available model as template
+		model = models[0];
 	}
 
 	if (!model) {
-		// Fallback to dummy model if model not found
-		model = {
-			id: dummyModelId,
-			name: dummyModelId,
-			displayName: "Dummy Model",
-			unlisted: false,
-		} as typeof model;
+		// Fallback to first model if model not found
+		model = models[0];
+	}
+
+	if (!model) {
+		error(400, "No models available");
 	}
 
 	// Shared conversations are no longer supported

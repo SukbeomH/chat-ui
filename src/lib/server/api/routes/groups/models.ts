@@ -130,7 +130,7 @@ export const modelGroup = new Elysia().group("/models", (app) =>
 		)
 		.group("/:namespace/:model?", (app) =>
 			app
-				.derive(async ({ params, error }) => {
+				.derive(async ({ params }) => {
 					let modelId: string = params.namespace;
 					if (params.model) {
 						modelId += "/" + params.model;
@@ -139,20 +139,23 @@ export const modelGroup = new Elysia().group("/models", (app) =>
 						const { models } = await import("$lib/server/models");
 						const model = models.find((m) => m.id === modelId);
 						if (!model || model.unlisted) {
-							return error(404, "Model not found");
+							throw status(404, "Model not found");
 						}
 						return { model };
 					} catch (e) {
-						return error(500, "Models not available");
+						if (e instanceof Response) {
+							throw e;
+						}
+						throw status(500, "Models not available");
 					}
 				})
 				.get("/", ({ model }) => {
 					return model;
 				})
 				.use(authPlugin)
-				.post("/subscribe", async ({ locals, model: _model, error }) => {
+				.post("/subscribe", async ({ locals, model: _model }) => {
 					if (!locals.sessionId) {
-						return error(401, "Unauthorized");
+						throw status(401, "Unauthorized");
 					}
 					// Settings are now stored client-side - no server-side update needed
 

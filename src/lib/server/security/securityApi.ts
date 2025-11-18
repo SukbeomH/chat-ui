@@ -160,7 +160,7 @@ export interface SecurityApiResponse {
  * 헤더 우선순위: externalApi > API 키 헤더 자동 감지 (AIM Guard 우선)
  */
 export function determineSecurityApi(config: SecurityApiConfig): "AIM" | "APRISM" | null {
-	if (config.externalApi) {
+	if (config.externalApi && config.externalApi !== "NONE") {
 		return config.externalApi;
 	}
 
@@ -249,9 +249,9 @@ export function convertMessagesForSecurityApi(
 		if (Array.isArray(msg.content)) {
 			if (apiType === "AIM") {
 				// AIM Guard는 텍스트만 추출
-				const textParts = msg.content
-					.filter((item) => item.type === "text")
-					.map((item) => (typeof item.text === "string" ? item.text : ""))
+				const textParts = (msg.content as Array<{ type?: string; text?: string }>)
+					.filter((item: { type?: string; text?: string }) => item.type === "text")
+					.map((item: { type?: string; text?: string }) => (typeof item.text === "string" ? item.text : ""))
 					.join(" ");
 				return { role, content: textParts || "" };
 			}

@@ -1,5 +1,5 @@
 import { collections } from "$lib/server/database";
-import { ObjectId } from "mongodb";
+import { nanoid } from "nanoid";
 import { describe, expect, it } from "vitest";
 
 import { insertLegacyConversation, insertSideBranchesConversation } from "./treeHelpers.spec";
@@ -17,10 +17,10 @@ Object.freeze(newMessage);
 describe("addSibling", async () => {
 	it("should fail on empty conversations", () => {
 		const conv = {
-			_id: new ObjectId(),
+			id: nanoid(),
 			rootMessageId: undefined,
 			messages: [] as Message[],
-		} satisfies Pick<Conversation, "_id" | "rootMessageId" | "messages">;
+		} satisfies Pick<Conversation, "id" | "rootMessageId" | "messages">;
 
 		expect(() => addSibling(conv, newMessage, "not-a-real-id-test")).toThrow(
 			"Cannot add a sibling to an empty conversation"
@@ -29,7 +29,7 @@ describe("addSibling", async () => {
 
 	it("should fail on legacy conversations", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -41,7 +41,7 @@ describe("addSibling", async () => {
 
 	it("should fail if the sibling message doesn't exist", async () => {
 		const convId = await insertSideBranchesConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -54,7 +54,7 @@ describe("addSibling", async () => {
 	// TODO: This behaviour should be fixed, we do not need to fail on the root message.
 	it("should fail if the sibling message is the root message", async () => {
 		const convId = await insertSideBranchesConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -69,7 +69,7 @@ describe("addSibling", async () => {
 
 	it("should add a sibling to a message", async () => {
 		const convId = await insertSideBranchesConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}

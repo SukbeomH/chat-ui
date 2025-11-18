@@ -1,7 +1,5 @@
-import type { ObjectId } from "bson";
-
 export interface ConvSidebar {
-	id: ObjectId | string;
+	id: string;
 	title: string;
 	updatedAt: Date;
 	createdAt: Date;

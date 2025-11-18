@@ -1,5 +1,5 @@
 import { collections } from "$lib/server/database";
-import { ObjectId } from "mongodb";
+import { nanoid } from "nanoid";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,7 +12,7 @@ import { buildSubtree } from "./buildSubtree";
 describe("buildSubtree", () => {
 	it("a subtree in a legacy conversation should be just a slice", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -35,7 +35,7 @@ describe("buildSubtree", () => {
 
 	it("a subtree in a linear branch conversation should be the ancestors and the message", async () => {
 		const convId = await insertLinearBranchConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -58,7 +58,7 @@ describe("buildSubtree", () => {
 
 	it("should throw an error if the message is not found", async () => {
 		const convId = await insertLinearBranchConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -70,7 +70,7 @@ describe("buildSubtree", () => {
 
 	it("should throw an error if the ancestor is not found", async () => {
 		const convId = await insertLinearBranchConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -84,7 +84,7 @@ describe("buildSubtree", () => {
 
 	it("should work on empty conversations", () => {
 		const conv = {
-			_id: new ObjectId(),
+			id: nanoid(),
 			rootMessageId: undefined,
 			messages: [],
 		};
@@ -95,7 +95,7 @@ describe("buildSubtree", () => {
 
 	it("should work for conversation with subtrees", async () => {
 		const convId = await insertSideBranchesConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}

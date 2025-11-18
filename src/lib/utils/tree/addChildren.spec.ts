@@ -1,5 +1,5 @@
 import { collections } from "$lib/server/database";
-import { ObjectId } from "mongodb";
+import { nanoid } from "nanoid";
 import { describe, expect, it } from "vitest";
 
 import { insertLegacyConversation, insertSideBranchesConversation } from "./treeHelpers.spec";
@@ -16,7 +16,7 @@ Object.freeze(newMessage);
 describe("addChildren", async () => {
 	it("should let you append on legacy conversations", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -28,7 +28,7 @@ describe("addChildren", async () => {
 	});
 	it("should not let you create branches on legacy conversations", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -37,7 +37,7 @@ describe("addChildren", async () => {
 	});
 	it("should not let you create a message that already exists", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -52,7 +52,7 @@ describe("addChildren", async () => {
 	});
 	it("should let you create branches on conversations with subtrees", async () => {
 		const convId = await insertSideBranchesConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -67,7 +67,7 @@ describe("addChildren", async () => {
 
 	it("should let you create a new leaf", async () => {
 		const convId = await insertSideBranchesConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -86,7 +86,7 @@ describe("addChildren", async () => {
 
 	it("should let you append to an empty conversation without specifying a parentId", async () => {
 		const conv = {
-			_id: new ObjectId(),
+			id: nanoid(),
 			rootMessageId: undefined,
 			messages: [] as Message[],
 		};
@@ -98,7 +98,7 @@ describe("addChildren", async () => {
 
 	it("should throw if you don't specify a parentId in a conversation with messages", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}
@@ -108,7 +108,7 @@ describe("addChildren", async () => {
 
 	it("should return the id of the new message", async () => {
 		const convId = await insertLegacyConversation();
-		const conv = await collections.conversations.findOne({ _id: new ObjectId(convId) });
+		const conv = await collections.conversations.findOne({ id: convId });
 		if (!conv) {
 			throw new Error("Conversation not found");
 		}

@@ -10,6 +10,7 @@ import type OpenAI from "openai";
 import { createImageProcessorOptionsValidator, makeImageProcessor } from "../images";
 import type { MessageFile } from "$lib/types/Message";
 import type { EndpointMessage } from "../endpoints";
+import type { InferenceProvider } from "@huggingface/inference";
 // uuid import removed (no tool call ids)
 
 export const endpointOAIParametersSchema = z.object({
@@ -70,7 +71,7 @@ export async function endpointOai(
 	}
 
 	// Store router metadata if captured
-	let routerMetadata: { route?: string; model?: string; provider?: string } = {};
+	let routerMetadata: { route?: string; model?: string; provider?: InferenceProvider } = {};
 	// Store debug information from litellm security handler
 	let debugInfo: {
 		originalRequest?: unknown;
@@ -96,12 +97,12 @@ export async function endpointOai(
 			routerMetadata = {
 				route: routeHeader,
 				model: modelHeader,
-				provider: providerHeader || undefined,
+				provider: providerHeader ? (providerHeader as InferenceProvider) : undefined,
 			};
 		} else if (providerHeader) {
 			// Even without router metadata, capture provider info
 			routerMetadata = {
-				provider: providerHeader,
+				provider: providerHeader as InferenceProvider,
 			};
 		}
 

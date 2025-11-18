@@ -74,6 +74,8 @@ module.exports = {
 		File: "readonly",
 		Response: "readonly",
 		Request: "readonly",
+		RequestInfo: "readonly",
+		RequestInit: "readonly",
 		ReadableStream: "readonly",
 		TextDecoderStream: "readonly",
 		Buffer: "readonly",

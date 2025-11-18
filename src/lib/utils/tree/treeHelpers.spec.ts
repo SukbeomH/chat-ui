@@ -1,12 +1,12 @@
 import { collections } from "$lib/server/database";
-import { ObjectId } from "mongodb";
+import { nanoid } from "nanoid";
 import { describe, expect, it } from "vitest";
 
 // function used to insert conversations used for testing
 
 export const insertLegacyConversation = async () => {
 	const res = await collections.conversations.insertOne({
-		_id: new ObjectId(),
+		id: nanoid(),
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		title: "legacy conversation",
@@ -40,7 +40,7 @@ export const insertLegacyConversation = async () => {
 
 export const insertLinearBranchConversation = async () => {
 	const res = await collections.conversations.insertOne({
-		_id: new ObjectId(),
+		id: nanoid(),
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		title: "linear branch conversation",
@@ -83,7 +83,7 @@ export const insertLinearBranchConversation = async () => {
 
 export const insertSideBranchesConversation = async () => {
 	const res = await collections.conversations.insertOne({
-		_id: new ObjectId(),
+		id: nanoid(),
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		title: "side branches conversation",

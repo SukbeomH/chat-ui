@@ -276,6 +276,11 @@
 				conversationTitle = data.title;
 			}
 
+			if (!page.params.id) {
+				error.set("Conversation ID is required");
+				return;
+			}
+
 			const conversationData: Conversation = {
 				id: page.params.id,
 				model: data.model,
@@ -609,17 +614,21 @@
 	);
 
 	// Create conversation object for ChatWindow
-	const conversation = $derived<Conversation>({
-		id: page.params.id,
-		model: data.model,
-		title: data.title,
-		messages,
-		rootMessageId: data.rootMessageId,
-		preprompt: data.preprompt,
-		meta: data.meta,
-		createdAt: data.updatedAt || new Date(),
-		updatedAt: new Date(),
-	});
+	const conversation = $derived<Conversation | null>(
+		page.params.id
+			? {
+					id: page.params.id,
+					model: data.model,
+					title: data.title,
+					messages,
+					rootMessageId: data.rootMessageId,
+					preprompt: data.preprompt,
+					meta: data.meta,
+					createdAt: data.updatedAt || new Date(),
+					updatedAt: new Date(),
+				}
+			: null
+	);
 
 	async function handleConversationUpdate(updates: Partial<Conversation>) {
 		if (!browser) {
@@ -698,9 +707,9 @@
 	onretry={onRetry}
 	onshowAlternateMsg={onShowAlternateMsg}
 	onstop={stopGeneration}
+	conversation={conversation ?? undefined}
 	models={data.models}
 	currentModel={findCurrentModel(data.models, data.oldModels, data.model)}
-	{conversation}
 	onConversationUpdate={handleConversationUpdate}
 />
 
