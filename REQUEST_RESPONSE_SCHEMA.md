@@ -245,6 +245,9 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
 | `timing` | object | 시간 측정 정보 (초 단위) |
 | `metadata` | object | 메타데이터 |
 | `external_api_response` | object | input 응답과 동일 (하위 호환성) |
+| `input_security_api_error` | object | input 보안 API 호출 실패 시 에러 정보 (있는 경우) |
+| `output_security_api_error` | object | output 보안 API 호출 실패 시 에러 정보 (있는 경우) |
+| `handler_error` | object | handler 내부 오류 시 에러 정보 (있는 경우) |
 | `aim_guard_details` | object | AIM Guard 세부 응답 필드 (AIM Guard 사용 시에만 포함) |
 | `aprism_details` | object | aprism 세부 응답 필드 (aprism 사용 시에만 포함) |
 
@@ -260,6 +263,9 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
 | `llm_request` | input 검증 수행 시만 포함 |
 | `output_security_api_response` | output 검증 수행 시만 포함 |
 | `external_api_response` | input 검증 수행 시만 포함 (하위 호환성) |
+| `input_security_api_error` | input 보안 API 호출 실패 시만 포함 |
+| `output_security_api_error` | output 보안 API 호출 실패 시만 포함 |
+| `handler_error` | handler 내부 오류 발생 시만 포함 |
 | `aim_guard_details` | AIM Guard 사용 시에만 포함 |
 | `aprism_details` | aprism 사용 시에만 포함 |
 
@@ -267,6 +273,9 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
 - `input_security_api_response`는 `x-{api}-type` 헤더가 "input" 또는 "both"일 때 포함됩니다.
 - `llm_request`는 `input_security_api_response`가 포함될 때 함께 포함됩니다 (보안 검증 후 수정된 요청).
 - `output_security_api_response`는 `x-{api}-type` 헤더가 "output" 또는 "both"일 때 포함됩니다.
+- `input_security_api_error`는 input 보안 API 호출이 실패하거나 예외가 발생한 경우에만 포함됩니다.
+- `output_security_api_error`는 output 보안 API 호출이 실패하거나 예외가 발생한 경우에만 포함됩니다.
+- `handler_error`는 handler 내부에서 예외가 발생한 경우에만 포함됩니다.
 - `aim_guard_details`와 `aprism_details`는 각각 해당 보안 API를 사용할 때만 포함되며, input/output 중 하나만 검증한 경우 해당 필드만 포함됩니다.
 
 #### timing 필드
@@ -451,6 +460,83 @@ Identifier API의 output 응답은 input과 동일한 구조를 가집니다.
 - `SAFE`: 안전함 (정상 처리)
 
 **score**: 위험도 확률 (0.0 ~ 1.0)
+
+---
+
+## 에러 응답 구조
+
+각 단계에서 실패한 경우 해당 에러 정보가 포함됩니다.
+
+### input_security_api_error
+
+Input 보안 API 호출 실패 시 포함됩니다.
+
+```json
+{
+  "error": "External API request timeout",
+  "status": "timeout",
+  "status_code": 408,
+  "timestamp": "2025-01-XX...",
+  "traceback": "Traceback (most recent call last):\n..."
+}
+```
+
+또는 예외 발생 시:
+
+```json
+{
+  "error": "Connection error",
+  "traceback": "Traceback (most recent call last):\n...",
+  "timestamp": "2025-01-XX..."
+}
+```
+
+### output_security_api_error
+
+Output 보안 API 호출 실패 시 포함됩니다.
+
+```json
+{
+  "error": "External API request timeout",
+  "status": "timeout",
+  "status_code": 408,
+  "timestamp": "2025-01-XX...",
+  "traceback": "Traceback (most recent call last):\n..."
+}
+```
+
+또는 예외 발생 시:
+
+```json
+{
+  "error": "Connection error",
+  "traceback": "Traceback (most recent call last):\n...",
+  "timestamp": "2025-01-XX..."
+}
+```
+
+### handler_error
+
+Handler 내부 오류 발생 시 포함됩니다.
+
+```json
+{
+  "error": "Invalid response format",
+  "traceback": "Traceback (most recent call last):\n...",
+  "timestamp": "2025-01-XX...",
+  "stage": "post_call_hook"
+}
+```
+
+**필드 설명**:
+- `error`: 에러 메시지
+- `status`: 에러 상태 (API 호출 실패 시에만 포함, "error" 또는 "timeout")
+- `status_code`: HTTP 상태 코드 (API 호출 실패 시에만 포함)
+- `traceback`: 상세한 에러 스택 트레이스 (디버깅용)
+- `timestamp`: 에러 발생 시각
+- `stage`: 에러 발생 단계 (handler_error에만 포함, "post_call_hook" 등)
+
+---
 
 #### aprism_details
 
