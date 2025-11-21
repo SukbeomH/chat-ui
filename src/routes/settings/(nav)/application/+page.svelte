@@ -15,6 +15,7 @@
 	import { onMount } from "svelte";
 	import { browser } from "$app/environment";
 	import { getThemePreference, setTheme, type ThemePreference } from "$lib/switchTheme";
+	import { exportAllConversationsToCsv } from "$lib/utils/csvExport";
 
 	const publicConfig = usePublicConfig();
 	const settings = useSettingsStore();
@@ -37,20 +38,30 @@
 	let refreshing: boolean = $state(false);
 	let refreshMessage: string | null = $state(null);
 
-	// Auto-save security API settings when changed (debounced)
+	// CSV Export UI state
+	let isExporting: boolean = $state(false);
+	let exportError: string | null = $state(null);
+
+	async function handleExportAll() {
+		isExporting = true;
+		exportError = null;
+
+		try {
+			await exportAllConversationsToCsv();
+		} catch (err) {
+			exportError = err instanceof Error ? err.message : "Export failed";
+			console.error("Export error:", err);
+		} finally {
+			isExporting = false;
+		}
+	}
+
+	// Auto-save LLM API settings when changed (debounced)
 	let settingsTimeout: ReturnType<typeof setTimeout> | undefined;
 	$effect(() => {
 		clearTimeout(settingsTimeout);
 		settingsTimeout = setTimeout(() => {
 			settings.set({
-				securityApiEnabled: $settings.securityApiEnabled,
-				securityApiUrl: $settings.securityApiUrl,
-				securityExternalApi: $settings.securityExternalApi,
-				securityAimGuardType: $settings.securityAimGuardType,
-				securityAimGuardProjectId: $settings.securityAimGuardProjectId,
-				securityAprismApiType: $settings.securityAprismApiType,
-				securityAprismType: $settings.securityAprismType,
-				securityAprismExcludeLabels: $settings.securityAprismExcludeLabels,
 				llmApiUrl: $settings.llmApiUrl,
 				llmApiKey: $settings.llmApiKey,
 			});
@@ -194,190 +205,6 @@
 			</div>
 		</div>
 
-		<!-- Security Proxy Handler Settings -->
-		<div
-			class="rounded-xl border border-gray-200 bg-white px-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
-		>
-			<div class="divide-y divide-gray-200 dark:divide-gray-700">
-				<div class="py-3">
-					<div class="mb-3 text-[13px] font-semibold text-gray-800 dark:text-gray-200">
-						Security Proxy Handler Settings
-					</div>
-					<div class="space-y-3">
-						<div class="flex items-start justify-between">
-							<div class="flex-1">
-								<div class="text-[13px] font-medium text-gray-800 dark:text-gray-200">
-									Enable Security Proxy Handler
-								</div>
-								<p class="text-[12px] text-gray-500 dark:text-gray-400">
-									Route messages through security API (AIM Guard or aprism) before sending to LLM.
-								</p>
-							</div>
-							<Switch name="securityApiEnabled" bind:checked={$settings.securityApiEnabled} />
-						</div>
-
-						{#if $settings.securityApiEnabled}
-							<div>
-								<label class="block text-[12px] font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Security API Selection
-								</label>
-								<div class="space-y-2">
-									<label class="flex items-center">
-										<input
-											type="radio"
-											name="securityExternalApi"
-											value="AIM"
-											bind:group={$settings.securityExternalApi}
-											class="mr-2"
-										/>
-										<span class="text-[12px] text-gray-700 dark:text-gray-300">AIM Guard</span>
-									</label>
-									<label class="flex items-center">
-										<input
-											type="radio"
-											name="securityExternalApi"
-											value="APRISM"
-											bind:group={$settings.securityExternalApi}
-											class="mr-2"
-										/>
-										<span class="text-[12px] text-gray-700 dark:text-gray-300">aprism</span>
-									</label>
-									<label class="flex items-center">
-										<input
-											type="radio"
-											name="securityExternalApi"
-											value="NONE"
-											bind:group={$settings.securityExternalApi}
-											class="mr-2"
-										/>
-										<span class="text-[12px] text-gray-700 dark:text-gray-300">사용 안함</span>
-									</label>
-								</div>
-								<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-									API 키는 서버 환경 변수에서 자동으로 읽습니다 (AIM_GUARD_KEY, APRISM_INFERENCE_KEY)
-								</p>
-							</div>
-
-							{#if $settings.securityExternalApi === "AIM"}
-								<div class="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-700/50">
-									<div class="mb-2 text-[12px] font-semibold text-gray-800 dark:text-gray-200">
-										AIM Guard Settings
-									</div>
-									<div class="space-y-3">
-										<div>
-											<label
-												for="app-aim-guard-type"
-												class="block text-[12px] font-medium text-gray-700 dark:text-gray-300"
-											>
-												검증 타입
-											</label>
-											<select
-												id="app-aim-guard-type"
-												bind:value={$settings.securityAimGuardType}
-												class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-[12px] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-											>
-												<option value="both">both (input + output)</option>
-												<option value="input">input only</option>
-												<option value="output">output only</option>
-											</select>
-											<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-												입력과 출력 중 어느 것을 검증할지 선택합니다 (기본값: both)
-											</p>
-										</div>
-										<div>
-											<label
-												for="app-aim-guard-project-id"
-												class="block text-[12px] font-medium text-gray-700 dark:text-gray-300"
-											>
-												프로젝트 ID (선택)
-											</label>
-											<input
-												id="app-aim-guard-project-id"
-												type="text"
-												bind:value={$settings.securityAimGuardProjectId}
-												placeholder="default"
-												class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-[12px] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-											/>
-											<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-												프로젝트별 정책 규칙을 사용하려면 프로젝트 ID를 입력하세요 (기본값: "default")
-											</p>
-										</div>
-									</div>
-								</div>
-							{/if}
-
-							{#if $settings.securityExternalApi === "APRISM"}
-								<div class="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-700/50">
-									<div class="mb-2 text-[12px] font-semibold text-gray-800 dark:text-gray-200">
-										aprism Settings
-									</div>
-									<div class="space-y-3">
-										<div>
-											<label
-												for="app-aprism-api-type"
-												class="block text-[12px] font-medium text-gray-700 dark:text-gray-300"
-											>
-												API 타입
-											</label>
-											<select
-												id="app-aprism-api-type"
-												bind:value={$settings.securityAprismApiType}
-												class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-[12px] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-											>
-												<option value="identifier">identifier (PII 탐지 및 마스킹)</option>
-												<option value="risk-detector">risk-detector (위험 탐지)</option>
-											</select>
-											<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-												사용할 aprism API를 선택합니다 (기본값: identifier)
-											</p>
-										</div>
-										<div>
-											<label
-												for="app-aprism-type"
-												class="block text-[12px] font-medium text-gray-700 dark:text-gray-300"
-											>
-												처리 타입
-											</label>
-											<select
-												id="app-aprism-type"
-												bind:value={$settings.securityAprismType}
-												class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-[12px] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-											>
-												<option value="both">both (input + output)</option>
-												<option value="input">input only</option>
-												<option value="output">output only</option>
-											</select>
-											<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-												입력과 출력 중 어느 것을 처리할지 선택합니다 (기본값: both)
-											</p>
-										</div>
-										<div>
-											<label
-												for="app-aprism-exclude-labels"
-												class="block text-[12px] font-medium text-gray-700 dark:text-gray-300"
-											>
-												제외 라벨 (선택, Identifier 전용)
-											</label>
-											<input
-												id="app-aprism-exclude-labels"
-												type="text"
-												bind:value={$settings.securityAprismExcludeLabels}
-												placeholder="EMAIL,PHONE_NUMBER"
-												class="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-[12px] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-											/>
-											<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-												마스킹하지 않을 PII 라벨을 콤마로 구분하여 입력합니다 (예: EMAIL,PHONE_NUMBER)
-											</p>
-										</div>
-									</div>
-								</div>
-							{/if}
-						{/if}
-					</div>
-				</div>
-			</div>
-		</div>
-
 		<!-- LLM API Override Settings -->
 		<div
 			class="rounded-xl border border-gray-200 bg-white px-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
@@ -430,6 +257,29 @@
 						</div>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Data Export -->
+		<div
+			class="rounded-xl border border-gray-200 bg-white px-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+		>
+			<div class="py-3">
+				<div class="mb-3 text-[13px] font-semibold text-gray-800 dark:text-gray-200">Data Export</div>
+				<p class="mb-3 text-[12px] text-gray-500 dark:text-gray-400">
+					Export all conversations with debug information to CSV format for analysis in Excel.
+				</p>
+				<button
+					onclick={handleExportAll}
+					disabled={isExporting}
+					class="rounded-md bg-blue-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-blue-500 dark:hover:bg-blue-600"
+					type="button"
+				>
+					{isExporting ? "Exporting..." : "Export All Conversations to CSV"}
+				</button>
+				{#if exportError}
+					<p class="mt-2 text-[12px] text-red-600 dark:text-red-400">{exportError}</p>
+				{/if}
 			</div>
 		</div>
 

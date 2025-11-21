@@ -32,38 +32,45 @@ Content-Type: application/json
 
 | 헤더 | 타입 | 필수 | 설명 | 예시 |
 | :--- | :--- | :--- | :--- | :--- |
-| `x-external-api` | string | 선택 | 보안 API 선택: "AIM" 또는 "APRISM" | "AIM" |
+| `x-external-api` | string | 선택 | 보안 API 선택: "AIM", "APRISM", 또는 "NONE" | "AIM" |
 
-**참고**: `x-external-api` 헤더가 없어도 API 키 헤더만 있으면 자동 감지됩니다.
+**유효값**:
+- `"AIM"`: AIM Guard 사용
+- `"APRISM"`: aprism 사용
+- `"NONE"`: 보안 API 사용 안 함 (명시적으로 비활성화)
+
+**참고**: 
+- `x-external-api` 헤더가 없으면 보안 API를 사용하지 않습니다 (일반 LLM 요청 처리).
+- 보안 API 키는 핸들러에서 기본값으로 처리되므로 클라이언트가 요청에 포함할 필요가 없습니다.
 
 #### AIM Guard 헤더
 
 | 헤더 | 타입 | 필수 | 설명 | 예시 |
 | :--- | :--- | :--- | :--- | :--- |
-| `x-aim-guard-key` | string | 필수* | AIM Guard API 키 | "your-aim-guard-api-key" |
 | `x-aim-guard-type` | string | 선택 | 검증 타입: "both" (기본값), "input", "output" | "both" |
 | `x-aim-guard-project-id` | string | 선택 | 프로젝트 ID (기본값: "default") | "my-project" |
 
-*`x-external-api=AIM` 또는 AIM Guard만 사용할 때 필수
+**참고**: AIM Guard API 키는 핸들러에서 기본값으로 처리되므로 클라이언트가 요청에 포함할 필요가 없습니다.
 
 #### aprism 헤더
 
 | 헤더 | 타입 | 필수 | 설명 | 예시 |
 | :--- | :--- | :--- | :--- | :--- |
-| `x-aprism-inference-key` | string | 필수* | aprism Inference API 키 | "your-aprism-api-key" |
 | `x-aprism-api-type` | string | 선택 | API 타입: "identifier" (기본값), "risk-detector" | "risk-detector" |
 | `x-aprism-type` | string | 선택 | 처리 타입: "both" (기본값), "input", "output" | "both" |
 | `x-aprism-exclude-labels` | string | 선택 | 제외 라벨 목록 (콤마로 구분, Identifier 전용) | "EMAIL,PHONE_NUMBER" |
 
-*`x-external-api=APRISM` 또는 aprism만 사용할 때 필수
+**참고**: aprism Inference API 키는 핸들러에서 기본값으로 처리되므로 클라이언트가 요청에 포함할 필요가 없습니다.
 
 #### 헤더 우선순위
 
 1. `x-external-api` 헤더 값이 명시되면 해당 API 사용 (최우선)
-2. `x-external-api`가 없으면 API 키 헤더로 자동 감지:
-   - `x-aim-guard-key`가 있으면 → AIM Guard
-   - `x-aprism-inference-key`가 있으면 → aprism
-   - **두 키가 모두 있으면 AIM Guard 우선** (elif 로직)
+   - `"AIM"`: AIM Guard 사용 (핸들러의 기본 AIM Guard API 키 사용)
+   - `"APRISM"`: aprism 사용 (핸들러의 기본 aprism API 키 사용)
+   - `"NONE"`: 보안 API 사용 안 함
+2. `x-external-api`가 없으면 보안 API를 사용하지 않습니다 (일반 LLM 요청 처리)
+
+**참고**: 보안 API 키는 핸들러 초기화 시 설정된 기본값을 사용합니다. 클라이언트는 API 키를 요청에 포함할 필요가 없습니다.
 
 #### 헤더 대소문자
 
@@ -259,9 +266,9 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
 | `llm_response` | 항상 포함 |
 | `timing` | 항상 포함 |
 | `metadata` | 항상 포함 |
-| `input_security_api_response` | input 검증 수행 시만 포함 |
-| `llm_request` | input 검증 수행 시만 포함 |
-| `output_security_api_response` | output 검증 수행 시만 포함 |
+| `input_security_api_response` | input 검증 수행 시만 포함 (성공/실패/생략 모두) |
+| `llm_request` | input 검증이 성공적으로 완료된 경우에만 포함 |
+| `output_security_api_response` | output 검증 수행 시만 포함 (성공/실패/생략 모두) |
 | `external_api_response` | input 검증 수행 시만 포함 (하위 호환성) |
 | `input_security_api_error` | input 보안 API 호출 실패 시만 포함 |
 | `output_security_api_error` | output 보안 API 호출 실패 시만 포함 |
@@ -270,11 +277,11 @@ Security Proxy Handler는 표준 OpenAI API 응답 구조를 유지하며, 추�
 | `aprism_details` | aprism 사용 시에만 포함 |
 
 **참고**:
-- `input_security_api_response`는 `x-{api}-type` 헤더가 "input" 또는 "both"일 때 포함됩니다.
-- `llm_request`는 `input_security_api_response`가 포함될 때 함께 포함됩니다 (보안 검증 후 수정된 요청).
-- `output_security_api_response`는 `x-{api}-type` 헤더가 "output" 또는 "both"일 때 포함됩니다.
-- `input_security_api_error`는 input 보안 API 호출이 실패하거나 예외가 발생한 경우에만 포함됩니다.
-- `output_security_api_error`는 output 보안 API 호출이 실패하거나 예외가 발생한 경우에만 포함됩니다.
+- `input_security_api_response`는 `x-{api}-type` 헤더가 "input" 또는 "both"일 때 포함됩니다. 성공/실패/생략 상태 모두 포함됩니다.
+- `llm_request`는 `input_security_api_response`가 성공적으로 완료된 경우에만 포함됩니다 (보안 검증 후 수정된 요청). 실패하거나 생략된 경우에는 포함되지 않습니다.
+- `output_security_api_response`는 `x-{api}-type` 헤더가 "output" 또는 "both"일 때 포함됩니다. 성공/실패/생략 상태 모두 포함됩니다.
+- `input_security_api_error`는 input 보안 API 호출이 실패(status="error" 또는 "timeout")하거나 예외가 발생한 경우에만 포함됩니다. "skipped" 상태는 에러가 아니므로 포함되지 않습니다.
+- `output_security_api_error`는 output 보안 API 호출이 실패(status="error" 또는 "timeout")하거나 예외가 발생한 경우에만 포함됩니다. "skipped" 상태는 에러가 아니므로 포함되지 않습니다.
 - `handler_error`는 handler 내부에서 예외가 발생한 경우에만 포함됩니다.
 - `aim_guard_details`와 `aprism_details`는 각각 해당 보안 API를 사용할 때만 포함되며, input/output 중 하나만 검증한 경우 해당 필드만 포함됩니다.
 
@@ -463,9 +470,9 @@ Identifier API의 output 응답은 input과 동일한 구조를 가집니다.
 
 ---
 
-## 에러 응답 구조
+## security_proxied_data 내 에러 필드
 
-각 단계에서 실패한 경우 해당 에러 정보가 포함됩니다.
+각 단계에서 실패한 경우 해당 에러 정보가 `security_proxied_data`에 포함됩니다.
 
 ### input_security_api_error
 
@@ -643,9 +650,9 @@ aprism을 사용하는 경우, `security_proxied_data`에 `aprism_details` 필�
 
 ---
 
-## 에러 응답 구조
+## 보안 API 응답 상태
 
-### 보안 API 호출 실패
+### 보안 API 호출 실패 및 생략
 
 보안 API 호출이 실패하거나 타임아웃된 경우, 원본 LLM 요청은 그대로 진행됩니다 (Graceful Degradation).
 
@@ -692,6 +699,10 @@ aprism을 사용하는 경우, `security_proxied_data`에 `aprism_details` 필�
 **응답 처리**:
 - `input_security_api_response.status`가 "error", "timeout", 또는 "skipped"이면 원본 요청 진행
 - `output_security_api_response.status`가 "error", "timeout", 또는 "skipped"이면 원본 응답 반환
+
+**에러 필드 포함 조건**:
+- `input_security_api_error`와 `output_security_api_error`는 status가 "error" 또는 "timeout"일 때만 포함됩니다.
+- "skipped" 상태는 에러가 아니므로 에러 필드에 포함되지 않습니다.
 
 ### BLOCKING 응답
 

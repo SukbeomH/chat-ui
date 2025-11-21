@@ -22,12 +22,14 @@
 	import type { ConvSidebar } from "$lib/types/ConvSidebar";
 	import type { Model } from "$lib/types/Model";
 	import { page } from "$app/state";
+	import { goto } from "$app/navigation";
 	import InfiniteScroll from "./InfiniteScroll.svelte";
 	import { CONV_NUM_PER_PAGE } from "$lib/constants/pagination";
 	import { browser } from "$app/environment";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 	import { requireAuthUser } from "$lib/utils/auth";
-	import { getConversations } from "$lib/storage/conversations";
+	import { getConversations, deleteAllConversations } from "$lib/storage/conversations";
+	import { exportAllConversationsToCsv } from "$lib/utils/csvExport";
 
 	const publicConfig = usePublicConfig();
 
@@ -50,18 +52,40 @@
 	/* eslint-enable prefer-const */
 
 	let hasMore = $state(true);
+	let isExporting = $state(false);
 
-	function handleNewChatClick(e: MouseEvent) {
+	async function handleNewChatClick(e: MouseEvent) {
 		isAborted.set(true);
 
 		if (requireAuthUser()) {
 			e.preventDefault();
+			return;
 		}
+
+		e.preventDefault();
+
+		// 홈으로 이동하면서 newChat 파라미터를 통해 설정 모달을 자동으로 연다
+		await goto(`${base}/?newChat=1`);
 	}
 
 	function handleNavItemClick(e: MouseEvent) {
 		if (requireAuthUser()) {
 			e.preventDefault();
+		}
+	}
+
+	async function handleExportClick() {
+		if (isExporting) {
+			return;
+		}
+
+		isExporting = true;
+		try {
+			await exportAllConversationsToCsv();
+		} catch (err) {
+			console.error("Export error:", err);
+		} finally {
+			isExporting = false;
 		}
 	}
 
@@ -89,8 +113,6 @@
 			return date.getTime() < dateRanges[2];
 		}),
 	});
-
-	const nModels: number = page.data.models.filter((el: Model) => !el.unlisted).length;
 
 	async function handleVisible() {
 		if (!browser) {
@@ -140,6 +162,37 @@
 	onDestroy(() => {
 		unsubscribeTheme?.();
 	});
+
+	async function handleDeleteAllClick() {
+		if (requireAuthUser()) {
+			return;
+		}
+
+		if (!browser) {
+			return;
+		}
+
+		// 사용자가 실수로 누르지 않도록 확인 다이얼로그 표시
+		// eslint-disable-next-line no-alert
+		const confirmed = window.confirm("모든 대화 내역을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.");
+		if (!confirmed) {
+			return;
+		}
+
+		try {
+			await deleteAllConversations();
+			conversations = [];
+
+			// 현재 보고 있는 대화가 삭제되었을 수 있으므로 루트로 이동
+			if (page.route.id === "/conversation/[id]") {
+				await goto(`${base}/`, { replaceState: true });
+			}
+		} catch (err) {
+			// 에러는 콘솔에만 남기고 UI는 조용히 유지
+			// eslint-disable-next-line no-console
+			console.error("Failed to delete all conversations:", err);
+		}
+	}
 </script>
 
 <div
@@ -152,14 +205,14 @@
 		<Logo classNames="dark:invert mr-[2px]" />
 		{publicConfig.PUBLIC_APP_NAME}
 	</a>
-	<a
-		href={`${base}/`}
+	<button
+		type="button"
 		onclick={handleNewChatClick}
-		class="flex rounded-lg border bg-white px-2 py-0.5 text-center shadow-sm hover:shadow-none dark:border-gray-600 dark:bg-gray-700 sm:text-smd"
+		class="flex rounded-lg border bg-white px-2 py-0.5 text-center text-sm shadow-sm hover:shadow-none dark:border-gray-600 dark:bg-gray-700 sm:text-smd"
 		title="Ctrl/Cmd + Shift + O"
 	>
 		New Chat
-	</a>
+	</button>
 </div>
 
 <div
@@ -200,26 +253,25 @@
 			/>
 		</div>
 	{/if}
-	<a
-		href="{base}/models"
-		class="flex h-9 flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-		onclick={handleNavItemClick}
-	>
-		Models
-		<span
-			class="ml-auto rounded-md bg-gray-500/5 px-1.5 py-0.5 text-xs text-gray-400 dark:bg-gray-500/20 dark:text-gray-400"
-			>{nModels}</span
-		>
-	</a>
 
 	<span class="flex gap-1">
-		<a
-			href="{base}/settings/application"
-			class="flex h-9 flex-none flex-grow items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
-			onclick={handleNavItemClick}
-		>
-			Settings
-		</a>
+		<div class="flex flex-1 flex-col gap-1">
+			<button
+				type="button"
+				onclick={handleExportClick}
+				disabled={isExporting}
+				class="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-black px-4 text-xs font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+			>
+				{isExporting ? "Exporting..." : "Data Export"}
+			</button>
+			<button
+				type="button"
+				onclick={handleDeleteAllClick}
+				class="flex h-8 w-full items-center justify-center rounded-lg border border-red-500 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-500/70 dark:text-red-300 dark:hover:bg-red-900/30"
+			>
+				모든 대화 삭제
+			</button>
+		</div>
 		<button
 			onclick={() => {
 				switchTheme();

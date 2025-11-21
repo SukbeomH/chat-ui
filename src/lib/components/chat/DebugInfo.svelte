@@ -217,6 +217,49 @@
 				</details>
 			{/if}
 
+			<!-- Input Security API Error -->
+			{#if debugUpdate.inputSecurityApiError}
+				<div
+					class="rounded border border-red-300 bg-red-50 p-3 text-xs dark:border-red-800 dark:bg-red-900/20"
+				>
+					<div class="flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-400">
+						<span>⚠️ Input Security API Error</span>
+					</div>
+					<div class="mt-2 space-y-2 text-xs">
+						<div>
+							<span class="font-semibold text-red-700 dark:text-red-400">Error:</span>
+							<span class="ml-2 text-red-600 dark:text-red-300">{debugUpdate.inputSecurityApiError.error}</span>
+						</div>
+						{#if debugUpdate.inputSecurityApiError.status}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Status:</span>
+								<span class="ml-2">{debugUpdate.inputSecurityApiError.status}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.inputSecurityApiError.status_code !== undefined}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Status Code:</span>
+								<span class="ml-2">{debugUpdate.inputSecurityApiError.status_code}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.inputSecurityApiError.timestamp}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Timestamp:</span>
+								<span class="ml-2">{debugUpdate.inputSecurityApiError.timestamp}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.inputSecurityApiError.traceback}
+							<details class="mt-2 rounded border border-red-200 bg-red-100 dark:border-red-800 dark:bg-red-900/30">
+								<summary class="cursor-pointer p-2 text-xs font-medium text-red-700 dark:text-red-400">
+									Traceback
+								</summary>
+								<pre class="max-h-60 overflow-auto whitespace-pre-wrap p-2 text-xs text-red-800 dark:text-red-300">{debugUpdate.inputSecurityApiError.traceback}</pre>
+							</details>
+						{/if}
+					</div>
+				</div>
+			{/if}
+
 			<!-- 3. LLM Request (from Security API) -->
 			{#if debugUpdate.securityProxiedLlmRequest}
 				<details
@@ -384,6 +427,49 @@
 				</details>
 			{/if}
 
+			<!-- Output Security API Error -->
+			{#if debugUpdate.outputSecurityApiError}
+				<div
+					class="rounded border border-red-300 bg-red-50 p-3 text-xs dark:border-red-800 dark:bg-red-900/20"
+				>
+					<div class="flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-400">
+						<span>⚠️ Output Security API Error</span>
+					</div>
+					<div class="mt-2 space-y-2 text-xs">
+						<div>
+							<span class="font-semibold text-red-700 dark:text-red-400">Error:</span>
+							<span class="ml-2 text-red-600 dark:text-red-300">{debugUpdate.outputSecurityApiError.error}</span>
+						</div>
+						{#if debugUpdate.outputSecurityApiError.status}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Status:</span>
+								<span class="ml-2">{debugUpdate.outputSecurityApiError.status}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.outputSecurityApiError.status_code !== undefined}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Status Code:</span>
+								<span class="ml-2">{debugUpdate.outputSecurityApiError.status_code}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.outputSecurityApiError.timestamp}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Timestamp:</span>
+								<span class="ml-2">{debugUpdate.outputSecurityApiError.timestamp}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.outputSecurityApiError.traceback}
+							<details class="mt-2 rounded border border-red-200 bg-red-100 dark:border-red-800 dark:bg-red-900/30">
+								<summary class="cursor-pointer p-2 text-xs font-medium text-red-700 dark:text-red-400">
+									Traceback
+								</summary>
+								<pre class="max-h-60 overflow-auto whitespace-pre-wrap p-2 text-xs text-red-800 dark:text-red-300">{debugUpdate.outputSecurityApiError.traceback}</pre>
+							</details>
+						{/if}
+					</div>
+				</div>
+			{/if}
+
 			<!-- 6. Final Response -->
 			{#if debugUpdate.finalResponse}
 				<details
@@ -398,6 +484,43 @@
 						<pre class="max-h-60 overflow-auto whitespace-pre-wrap text-xs dark:bg-gray-900">{debugUpdate.finalResponse}</pre>
 					</div>
 				</details>
+			{/if}
+
+			<!-- Handler Error -->
+			{#if debugUpdate.handlerError}
+				<div
+					class="rounded border border-red-300 bg-red-50 p-3 text-xs dark:border-red-800 dark:bg-red-900/20"
+				>
+					<div class="flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-400">
+						<span>⚠️ Handler Error</span>
+					</div>
+					<div class="mt-2 space-y-2 text-xs">
+						<div>
+							<span class="font-semibold text-red-700 dark:text-red-400">Error:</span>
+							<span class="ml-2 text-red-600 dark:text-red-300">{debugUpdate.handlerError.error}</span>
+						</div>
+						{#if debugUpdate.handlerError.stage}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Stage:</span>
+								<span class="ml-2">{debugUpdate.handlerError.stage}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.handlerError.timestamp}
+							<div>
+								<span class="text-red-600 dark:text-red-400">Timestamp:</span>
+								<span class="ml-2">{debugUpdate.handlerError.timestamp}</span>
+							</div>
+						{/if}
+						{#if debugUpdate.handlerError.traceback}
+							<details class="mt-2 rounded border border-red-200 bg-red-100 dark:border-red-800 dark:bg-red-900/30">
+								<summary class="cursor-pointer p-2 text-xs font-medium text-red-700 dark:text-red-400">
+									Traceback
+								</summary>
+								<pre class="max-h-60 overflow-auto whitespace-pre-wrap p-2 text-xs text-red-800 dark:text-red-300">{debugUpdate.handlerError.traceback}</pre>
+							</details>
+						{/if}
+					</div>
+				</div>
 			{/if}
 
 			<!-- Legacy: Security Response (for backward compatibility) -->

@@ -26,6 +26,9 @@ export default [
 		},
 		rules: {
 			...tsPlugin.configs.recommended.rules,
+			// TypeScript가 전역 타입/값을 체크하므로 no-undef는 비활성화
+			// (Request, Response, Buffer 등 환경별 전역 때문에 pre-commit 훅이 실패하지 않도록 함)
+			"no-undef": "off",
 			"no-empty": "off",
 			"require-yield": "off",
 			"@typescript-eslint/no-explicit-any": "error",

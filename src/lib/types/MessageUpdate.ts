@@ -1,5 +1,9 @@
 import type { InferenceProvider } from "@huggingface/inference";
-import type { SecurityApiCallResponse } from "$lib/server/security/securityApi";
+import type {
+	SecurityApiCallResponse,
+	SecurityApiError,
+	HandlerError,
+} from "$lib/server/security/securityApi";
 
 export type MessageUpdate =
 	| MessageStatusUpdate
@@ -100,11 +104,14 @@ export interface MessageDebugUpdate {
 	};
 	securityResponseTime?: number;
 	inputSecurityApiResponse?: SecurityApiCallResponse;
+	inputSecurityApiError?: SecurityApiError; // input 보안 API 호출 실패 시 에러 정보
 	outputSecurityApiResponse?: SecurityApiCallResponse;
+	outputSecurityApiError?: SecurityApiError; // output 보안 API 호출 실패 시 에러 정보
 	inputSecurityApiDuration?: number; // ms
 	outputSecurityApiDuration?: number; // ms
 	securityProxiedLlmRequest?: unknown; // security_proxied_data.llm_request (보안 검증 후 LLM에 전달된 수정된 요청)
 	llmResponse?: unknown; // security_proxied_data.llm_response
+	handlerError?: HandlerError; // handler 내부 오류 시 에러 정보
 	finalLlmResponse?: {
 		id?: string;
 		choices?: unknown[];

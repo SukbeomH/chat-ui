@@ -1,6 +1,8 @@
 import type { EndpointMessage } from "../endpoints/endpoints";
 import type OpenAI from "openai";
-import { env as serverEnv } from "$env/dynamic/private";
+/* eslint-disable no-undef */
+/* global HeadersInit, AbortSignal, setTimeout, fetch */
+import { logger } from "$lib/server/logger";
 
 /**
  * Security Proxy Handler 설정
@@ -62,6 +64,27 @@ export interface SecurityApiCallResponse {
 		call_end?: number;
 		duration?: number;
 	};
+}
+
+/**
+ * Security API 에러 정보
+ */
+export interface SecurityApiError {
+	error: string;
+	status?: "error" | "timeout";
+	status_code?: number;
+	timestamp?: string;
+	traceback?: string;
+}
+
+/**
+ * Handler 내부 에러 정보
+ */
+export interface HandlerError {
+	error: string;
+	traceback?: string;
+	timestamp?: string;
+	stage?: string;
 }
 
 /**
@@ -139,11 +162,14 @@ export interface AprismDetails {
 export interface SecurityProxiedData {
 	original_request?: unknown;
 	input_security_api_response?: SecurityApiCallResponse;
+	input_security_api_error?: SecurityApiError; // input 보안 API 호출 실패 시 에러 정보
 	llm_request?: unknown; // 보안 검증 후 LLM에 전달된 수정된 요청
 	llm_response?: unknown;
 	output_security_api_response?: SecurityApiCallResponse;
+	output_security_api_error?: SecurityApiError; // output 보안 API 호출 실패 시 에러 정보
 	timing?: TimingInfo;
 	metadata?: unknown;
+	handler_error?: HandlerError; // handler 내부 오류 시 에러 정보
 	aim_guard_details?: AimGuardDetails;
 	aprism_details?: AprismDetails;
 	// 하위 호환성
@@ -163,24 +189,15 @@ export interface SecurityApiResponse {
 
 /**
  * API 타입 결정
- * 헤더 우선순위: externalApi > API 키 헤더 자동 감지 (AIM Guard 우선)
+ * x-external-api 헤더 값에 따라 결정 (문서: REQUEST_RESPONSE_SCHEMA.md)
  */
 export function determineSecurityApi(config: SecurityApiConfig): "AIM" | "APRISM" | null {
+	// x-external-api 헤더 값이 명시되면 해당 API 사용
 	if (config.externalApi && config.externalApi !== "NONE") {
 		return config.externalApi;
 	}
 
-	// API 키 헤더로 자동 감지
-	const aimGuardKey = serverEnv.AIM_GUARD_KEY;
-	const aprismInferenceKey = serverEnv.APRISM_INFERENCE_KEY;
-
-	if (aimGuardKey) {
-		return "AIM";
-	}
-	if (aprismInferenceKey) {
-		return "APRISM";
-	}
-
+	// x-external-api가 없거나 "NONE"이면 보안 API 사용 안 함
 	return null;
 }
 
@@ -194,17 +211,14 @@ export function buildSecurityApiHeaders(config: SecurityApiConfig): HeadersInit 
 
 	const apiType = determineSecurityApi(config);
 
-	// x-external-api 헤더 (명시된 경우만)
-	if (config.externalApi) {
+	// x-external-api 헤더는 externalApi가 "NONE"이 아닌 경우 항상 추가
+	if (config.externalApi && config.externalApi !== "NONE") {
 		headers["x-external-api"] = config.externalApi;
 	}
 
 	// AIM Guard 헤더
+	// 참고: API 키(x-aim-guard-key)는 백엔드에서 처리하므로 현재 프로젝트에서는 추가하지 않음
 	if (apiType === "AIM") {
-		const aimGuardKey = serverEnv.AIM_GUARD_KEY;
-		if (aimGuardKey) {
-			headers["x-aim-guard-key"] = aimGuardKey;
-		}
 		if (config.aimGuardType) {
 			headers["x-aim-guard-type"] = config.aimGuardType;
 		}
@@ -214,11 +228,8 @@ export function buildSecurityApiHeaders(config: SecurityApiConfig): HeadersInit 
 	}
 
 	// aprism 헤더
+	// 참고: API 키(x-aprism-inference-key)는 백엔드에서 처리하므로 현재 프로젝트에서는 추가하지 않음
 	if (apiType === "APRISM") {
-		const aprismInferenceKey = serverEnv.APRISM_INFERENCE_KEY;
-		if (aprismInferenceKey) {
-			headers["x-aprism-inference-key"] = aprismInferenceKey;
-		}
 		if (config.aprismApiType) {
 			headers["x-aprism-api-type"] = config.aprismApiType;
 		}
@@ -229,6 +240,22 @@ export function buildSecurityApiHeaders(config: SecurityApiConfig): HeadersInit 
 			headers["x-aprism-exclude-labels"] = config.aprismExcludeLabels.join(",");
 		}
 	}
+
+	// 디버깅: 생성된 헤더 로그
+	logger.debug(
+		{
+			externalApi: config.externalApi,
+			apiType,
+			headers: Object.keys(headers),
+			headerValues: Object.fromEntries(
+				Object.entries(headers).map(([key, value]) => [
+					key,
+					key.toLowerCase().includes("key") ? "[REDACTED]" : value,
+				])
+			),
+		},
+		"Security API headers built"
+	);
 
 	return headers;
 }
@@ -257,7 +284,9 @@ export function convertMessagesForSecurityApi(
 				// AIM Guard는 텍스트만 추출
 				const textParts = (msg.content as Array<{ type?: string; text?: string }>)
 					.filter((item: { type?: string; text?: string }) => item.type === "text")
-					.map((item: { type?: string; text?: string }) => (typeof item.text === "string" ? item.text : ""))
+					.map((item: { type?: string; text?: string }) =>
+						typeof item.text === "string" ? item.text : ""
+					)
 					.join(" ");
 				return { role, content: textParts || "" };
 			}
@@ -386,6 +415,24 @@ export async function callSecurityApi(
 			stream: false,
 		};
 
+		// 디버깅: 요청 전 로그
+		logger.debug(
+			{
+				url: securityApiUrl,
+				method: "POST",
+				headers: Object.keys(headers),
+				headerValues: Object.fromEntries(
+					Object.entries(headers).map(([key, value]) => [
+						key,
+						key.toLowerCase().includes("key") ? "[REDACTED]" : value,
+					])
+				),
+				messageCount: messagesOpenAI.length,
+				apiType,
+			},
+			"Sending Security API request"
+		);
+
 		const response = await fetch(securityApiUrl, {
 			method: "POST",
 			headers,
@@ -393,10 +440,30 @@ export async function callSecurityApi(
 			signal: abortSignal,
 		});
 
+		// 디버깅: 응답 로그
+		logger.debug(
+			{
+				status: response.status,
+				statusText: response.statusText,
+				responseHeaders: Object.fromEntries(response.headers.entries()),
+			},
+			"Security API response received"
+		);
+
 		const securityResponseTime = Date.now() - startTime;
 
 		if (!response.ok) {
 			const errorText = await response.text();
+			logger.warn(
+				{
+					status: response.status,
+					statusText: response.statusText,
+					url: securityApiUrl,
+					apiType,
+					errorText: errorText.substring(0, 500), // 최대 500자만 로그
+				},
+				"Security API request failed"
+			);
 			return {
 				response: null,
 				securityProxiedData: undefined,
@@ -412,6 +479,18 @@ export async function callSecurityApi(
 		// security_proxied_data 추출
 		const securityProxiedData = parseSecurityProxiedData(data) || data.security_proxied_data;
 
+		// 디버깅: 성공 응답 로그
+		logger.debug(
+			{
+				hasSecurityProxiedData: !!securityProxiedData,
+				responseId: data.id,
+				model: data.model,
+				choicesCount: data.choices?.length || 0,
+				securityResponseTime,
+			},
+			"Security API request succeeded"
+		);
+
 		return {
 			response: data,
 			securityProxiedData,
@@ -419,11 +498,21 @@ export async function callSecurityApi(
 		};
 	} catch (error) {
 		const securityResponseTime = Date.now() - startTime;
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		logger.error(
+			{
+				error: errorMessage,
+				url: config.url,
+				apiType,
+				stack: error instanceof Error ? error.stack : undefined,
+			},
+			"Security API request exception"
+		);
 		return {
 			response: null,
 			securityProxiedData: undefined,
 			securityResponseTime,
-			error: error instanceof Error ? error.message : String(error),
+			error: errorMessage,
 		};
 	}
 }
@@ -454,40 +543,85 @@ export function mergeSecurityApiConfig(
 		securityAprismExcludeLabels?: string; // 콤마로 구분된 문자열
 	}
 ): SecurityApiConfig | null {
-	const enabled =
-		conversationMeta?.securityApiEnabled ?? globalSettings?.securityApiEnabled ?? false;
 	const url = conversationMeta?.securityApiUrl ?? globalSettings?.securityApiUrl ?? "";
 
-	// Return null if disabled or explicitly set to "NONE"
-	if (!enabled) {
-		return null;
-	}
+	const externalApi =
+		conversationMeta?.securityExternalApi ?? globalSettings?.securityExternalApi ?? "NONE";
 
-	const externalApi = conversationMeta?.securityExternalApi ?? globalSettings?.securityExternalApi ?? "NONE";
+	// Return null if explicitly set to "NONE" (라디오 버튼으로 제어)
 	if (externalApi === "NONE") {
+		logger.debug(
+			{
+				conversationMeta: conversationMeta?.securityExternalApi,
+				globalSettings: globalSettings?.securityExternalApi,
+				externalApi,
+			},
+			"Security API disabled (externalApi is NONE)"
+		);
 		return null;
 	}
 
 	// 기본값 적용
-	const aimGuardType = conversationMeta?.securityAimGuardType ?? globalSettings?.securityAimGuardType ?? "both";
-	const aprismApiType = conversationMeta?.securityAprismApiType ?? globalSettings?.securityAprismApiType ?? "identifier";
-	const aprismType = conversationMeta?.securityAprismType ?? globalSettings?.securityAprismType ?? "both";
-	const aimGuardProjectId = conversationMeta?.securityAimGuardProjectId ?? globalSettings?.securityAimGuardProjectId ?? "default";
+	const aimGuardType =
+		conversationMeta?.securityAimGuardType ?? globalSettings?.securityAimGuardType ?? "both";
+	const aprismApiType =
+		conversationMeta?.securityAprismApiType ??
+		globalSettings?.securityAprismApiType ??
+		"identifier";
+	const aprismType =
+		conversationMeta?.securityAprismType ?? globalSettings?.securityAprismType ?? "both";
+	const aimGuardProjectId =
+		conversationMeta?.securityAimGuardProjectId ??
+		globalSettings?.securityAimGuardProjectId ??
+		"default";
 
 	// aprismExcludeLabels 파싱
-	const excludeLabelsStr = conversationMeta?.securityAprismExcludeLabels ?? globalSettings?.securityAprismExcludeLabels ?? "";
+	const excludeLabelsStr =
+		conversationMeta?.securityAprismExcludeLabels ??
+		globalSettings?.securityAprismExcludeLabels ??
+		"";
 	const aprismExcludeLabels = excludeLabelsStr
-		? excludeLabelsStr.split(",").map((label) => label.trim()).filter((label) => label.length > 0)
+		? excludeLabelsStr
+				.split(",")
+				.map((label) => label.trim())
+				.filter((label) => label.length > 0)
 		: undefined;
 
-	return {
-		enabled,
+	const mergedConfig = {
+		enabled: true, // externalApi가 "NONE"이 아니면 항상 활성화
 		url,
-		externalApi: conversationMeta?.securityExternalApi ?? globalSettings?.securityExternalApi ?? "NONE",
+		externalApi:
+			conversationMeta?.securityExternalApi ?? globalSettings?.securityExternalApi ?? "NONE",
 		aimGuardType,
 		aimGuardProjectId,
 		aprismApiType,
 		aprismType,
 		aprismExcludeLabels,
 	};
+
+	// 디버깅: 병합된 설정 로그
+	logger.debug(
+		{
+			externalApi: mergedConfig.externalApi,
+			url: mergedConfig.url || "[empty]",
+			aimGuardType: mergedConfig.aimGuardType,
+			aimGuardProjectId: mergedConfig.aimGuardProjectId,
+			aprismApiType: mergedConfig.aprismApiType,
+			aprismType: mergedConfig.aprismType,
+			aprismExcludeLabels: mergedConfig.aprismExcludeLabels,
+			source: {
+				conversationMeta: {
+					securityExternalApi: conversationMeta?.securityExternalApi,
+					securityApiUrl: conversationMeta?.securityApiUrl ? "[set]" : "[empty]",
+				},
+				globalSettings: {
+					securityExternalApi: globalSettings?.securityExternalApi,
+					securityApiUrl: globalSettings?.securityApiUrl ? "[set]" : "[empty]",
+				},
+			},
+		},
+		"Security API config merged"
+	);
+
+	return mergedConfig;
 }

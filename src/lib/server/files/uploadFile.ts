@@ -1,3 +1,14 @@
-// This file is deprecated - use client-side storage instead
-// Re-export from client-side storage for backward compatibility
-export { uploadFile } from "$lib/storage/files";
+/* eslint-disable no-undef */
+/* global File, Buffer */
+import type { MessageFile } from "$lib/types/Message";
+import { createHash } from "node:crypto";
+import { storeFile } from "./storage";
+
+export async function uploadFile(file: File, conversationId: string): Promise<MessageFile> {
+	const arrayBuffer = await file.arrayBuffer();
+	const buffer = Buffer.from(arrayBuffer);
+
+	const sha = createHash("sha256").update(buffer).digest("hex");
+
+	return storeFile(conversationId, sha, buffer, file.name, file.type);
+}

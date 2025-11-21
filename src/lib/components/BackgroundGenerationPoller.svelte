@@ -7,15 +7,14 @@
 		backgroundGenerationEntries,
 		removeBackgroundGeneration,
 	} from "$lib/stores/backgroundGenerations";
-	import { useAPIClient, handleResponse } from "$lib/APIClient";
 	import { UrlDependency } from "$lib/types/UrlDependency";
 	import { MessageUpdateStatus, MessageUpdateType } from "$lib/types/MessageUpdate";
 	import type { Message } from "$lib/types/Message";
+	import { storage } from "$lib/storage/indexedDB";
 
 	const POLL_INTERVAL_MS = 1000;
 	const MAX_POLL_DURATION_MS = 3 * 60_000;
 
-	const client = useAPIClient();
 	const pollers = new Map<string, () => void>();
 	const inflight = new Set<string>();
 	const assistantSnapshots = new Map<string, string>();
@@ -68,9 +67,15 @@
 			log("poll", id);
 
 			try {
-				const response = await client.conversations({ id }).get();
-				const conversation = handleResponse(response);
-				const messages = conversation?.messages ?? [];
+				// Conversations are now stored client-side in IndexedDB
+				const conversation = await storage.getConversation(id);
+				if (!conversation) {
+					// Conversation not found in IndexedDB, remove from background generations
+					removeBackgroundGeneration(id);
+					stopPoller(id, "not found");
+					return;
+				}
+				const messages = conversation.messages ?? [];
 				const lastAssistant = [...messages]
 					.reverse()
 					.find((message: Message) => message.from === "assistant");

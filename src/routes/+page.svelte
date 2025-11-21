@@ -8,6 +8,7 @@
 	const publicConfig = usePublicConfig();
 
 	import ChatWindow from "$lib/components/chat/ChatWindow.svelte";
+	import NewChatModal from "$lib/components/chat/NewChatModal.svelte";
 	import { ERROR_MESSAGES, error } from "$lib/stores/errors";
 	import { pendingMessage } from "$lib/stores/pendingMessage";
 	import { useSettingsStore } from "$lib/stores/settings.js";
@@ -19,6 +20,7 @@
 	import { saveConversation } from "$lib/storage/conversations";
 	import { v4 } from "uuid";
 	import { browser } from "$app/environment";
+	import type { Conversation } from "$lib/types/Conversation";
 
 	const { data } = $props();
 
@@ -28,9 +30,221 @@
 
 	const settings = useSettingsStore();
 
+	// New chat modal state
+	let newChatModalOpen = $state(false);
+
+	// Pending conversation state for settings panel
+	let pendingConversationId: string | null = $state(null);
+	let pendingConversation: Conversation | null = $state(null);
+
+	async function createPendingConversation(meta?: Conversation["meta"]) {
+		// If conversation exists and meta is provided, update it
+		if (pendingConversationId && pendingConversation && meta) {
+			if (browser) {
+				pendingConversation.meta = {
+					...pendingConversation.meta,
+					...meta,
+				};
+				await saveConversation(pendingConversation);
+			}
+			return pendingConversation;
+		}
+
+		// Reuse existing pending conversation if available (no meta update)
+		if (pendingConversationId && pendingConversation) {
+			return pendingConversation;
+		}
+
+		try {
+			const validModels = data.models.map((model) => model.id);
+
+			let model;
+			if (validModels.includes($settings.activeModel)) {
+				model = $settings.activeModel;
+			} else {
+				model = data.models[0].id;
+			}
+
+			const res = await fetch(`${base}/conversation`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model,
+					preprompt: $settings.customPrompts[$settings.activeModel],
+				}),
+			});
+
+			if (!res.ok) {
+				const errorMessage = (await res.json()).message || ERROR_MESSAGES.default;
+				error.set(errorMessage);
+				console.error("Error while creating pending conversation: ", errorMessage);
+				return null;
+			}
+
+			const { conversationId, modelId } = await res.json();
+
+			// Create and save conversation to IndexedDB
+			if (browser) {
+				const now = new Date();
+				const rootMessageId = v4();
+				const conversation: Conversation = {
+					id: conversationId,
+					model: modelId,
+					title: "New Chat",
+					rootMessageId,
+					messages: [
+						{
+							id: rootMessageId,
+							from: "system",
+							content: $settings.customPrompts[modelId] || "",
+							createdAt: now,
+							updatedAt: now,
+							children: [],
+							ancestors: [],
+						},
+					],
+					preprompt: $settings.customPrompts[modelId],
+					meta,
+					createdAt: now,
+					updatedAt: now,
+				};
+
+				await saveConversation(conversation);
+
+				pendingConversationId = conversationId;
+				pendingConversation = conversation;
+
+				// Invalidate conversation list to trigger reload in layout
+				await invalidate(UrlDependency.ConversationList);
+
+				return conversation;
+			}
+
+			return null;
+		} catch (err) {
+			error.set((err as Error).message || ERROR_MESSAGES.default);
+			console.error(err);
+			return null;
+		}
+	}
+
+	async function handleSettingsPanelOpen() {
+		// Create conversation immediately when settings panel opens (if not exists)
+		if (!pendingConversation) {
+			const conversation = await createPendingConversation();
+			if (conversation) {
+				pendingConversation = conversation;
+			}
+		}
+	}
+
+	async function handleSettingsPanelClose() {
+		// No need to do anything on close - conversation already exists and settings are updated in real-time
+	}
+
+	async function handleConversationUpdate(updates: Partial<Conversation>) {
+		if (pendingConversation) {
+			pendingConversation = {
+				...pendingConversation,
+				...updates,
+			};
+			if (browser) {
+				await saveConversation(pendingConversation);
+			}
+		}
+	}
+
+	async function createConversationWithSettings(settings: {
+		model: string;
+		preprompt?: string;
+		meta?: Conversation["meta"];
+	}) {
+		try {
+			$loading = true;
+
+			const res = await fetch(`${base}/conversation`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: settings.model,
+					preprompt: settings.preprompt,
+				}),
+			});
+
+			if (!res.ok) {
+				const errorMessage = (await res.json()).message || ERROR_MESSAGES.default;
+				error.set(errorMessage);
+				console.error("Error while creating conversation: ", errorMessage);
+				return;
+			}
+
+			const { conversationId, modelId } = await res.json();
+
+			// Create and save conversation to IndexedDB
+			if (browser) {
+				const now = new Date();
+				const rootMessageId = v4();
+				await saveConversation({
+					id: conversationId,
+					model: modelId,
+					title: "New Chat",
+					rootMessageId,
+					messages: [
+						{
+							id: rootMessageId,
+							from: "system",
+							content: settings.preprompt || "",
+							createdAt: now,
+							updatedAt: now,
+							children: [],
+							ancestors: [],
+						},
+					],
+					preprompt: settings.preprompt,
+					meta: settings.meta,
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+
+			// Invalidate conversation list to trigger reload in layout
+			await invalidate(UrlDependency.ConversationList);
+			await goto(`${base}/conversation/${conversationId}`);
+		} catch (err) {
+			error.set((err as Error).message || ERROR_MESSAGES.default);
+			console.error(err);
+		} finally {
+			$loading = false;
+		}
+	}
+
 	async function createConversation(message: string) {
 		try {
 			$loading = true;
+
+			// Reuse pending conversation if available
+			if (pendingConversationId && pendingConversation) {
+				const conversationId = pendingConversationId;
+				// Clear pending state
+				pendingConversationId = null;
+				const savedConversation = pendingConversation;
+				pendingConversation = null;
+
+				// Ugly hack to use a store as temp storage, feel free to improve ^^
+				pendingMessage.set({
+					content: message,
+					files,
+				});
+
+				// Invalidate conversation list to trigger reload in layout
+				await invalidate(UrlDependency.ConversationList);
+				await goto(`${base}/conversation/${conversationId}`);
+				return;
+			}
 
 			// check if $settings.activeModel is a valid model
 			// else check if it's an assistant, and use that model
@@ -156,6 +370,20 @@
 	const currentModel = $derived(
 		findCurrentModel(data.models, data.oldModels, $settings.activeModel)
 	);
+
+	$effect(() => {
+		if (!browser) {
+			return;
+		}
+
+		if (page.url.searchParams.has("newChat")) {
+			newChatModalOpen = true;
+
+			const url = new URL(page.url);
+			url.searchParams.delete("newChat");
+			replaceState(url, page.state);
+		}
+	});
 </script>
 
 <svelte:head>
@@ -170,6 +398,21 @@
 		models={data.models}
 		bind:files
 		bind:draft
+		conversation={pendingConversation}
+		onConversationUpdate={handleConversationUpdate}
+		onSettingsPanelOpen={handleSettingsPanelOpen}
+		onNewChat={() => {
+			newChatModalOpen = true;
+		}}
+	/>
+
+	<NewChatModal
+		open={newChatModalOpen}
+		models={data.models}
+		onclose={() => {
+			newChatModalOpen = false;
+		}}
+		onstart={createConversationWithSettings}
 	/>
 {:else}
 	<div class="mx-auto my-20 max-w-xl rounded-xl border p-6 text-center dark:border-gray-700">

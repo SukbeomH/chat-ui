@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+/* global Request, Response, ReadableStream, AbortController, File, Buffer, setTimeout, App */
 import { models } from "$lib/server/models";
 import type { Message } from "$lib/types/Message";
 import type { Conversation } from "$lib/types/Conversation";
@@ -19,10 +21,7 @@ import type { TextGenerationContext } from "$lib/server/textGeneration/types";
 import { logger } from "$lib/server/logger.js";
 import { AbortRegistry } from "$lib/server/abortRegistry";
 import { MetricsServer } from "$lib/server/metrics";
-import {
-	callSecurityApi,
-	mergeSecurityApiConfig,
-} from "$lib/server/security/securityApi";
+import { callSecurityApi, mergeSecurityApiConfig } from "$lib/server/security/securityApi";
 import { endpoints } from "$lib/server/endpoints/endpoints";
 import { config } from "$lib/server/config";
 
@@ -467,7 +466,7 @@ export async function POST({
 				// Conversation persistence is handled client-side
 			}
 
-			const hasError = false;
+			let hasError = false;
 			const initialMessageContent = messageToWriteTo.content;
 
 			// Security API call and timing
@@ -477,7 +476,7 @@ export async function POST({
 			// llmRequest는 securityProxiedData.llm_request에서 추출됨
 			let finalLlmResponse: unknown = null;
 			let llmResponseTime = 0;
-			let llmIsDummy = false;
+			const llmIsDummy = false;
 			const llmStartTime = Date.now();
 
 			try {
@@ -602,7 +601,10 @@ export async function POST({
 						}
 
 						// Handle aprism Risk Detector API: UNSAFE면 차단
-						if (inputResponse.data.type === "risk-detector" && inputResponse.data.data?.label === "UNSAFE") {
+						if (
+							inputResponse.data.type === "risk-detector" &&
+							inputResponse.data.data?.label === "UNSAFE"
+						) {
 							const blockMessage = "요청하신 내용이 보안 정책을 위반하여 처리할 수 없습니다.";
 							await update({
 								type: MessageUpdateType.Debug,
@@ -636,8 +638,22 @@ export async function POST({
 					const llmApiKey = conv.meta?.llmApiKey ?? globalSettings.llmApiKey;
 
 					// Override endpoint with user-provided LLM API settings if available
-					if ((llmApiUrl || llmApiKey) && model.endpoints?.[0]?.type === "openai") {
+					if (
+						(llmApiUrl || llmApiKey || securityConfig) &&
+						model.endpoints?.[0]?.type === "openai"
+					) {
 						const originalEndpoint = model.endpoints[0];
+						// Convert SecurityApiConfig to endpoint schema format
+						const securityApiConfigForEndpoint = securityConfig
+							? {
+									externalApi: securityConfig.externalApi,
+									aimGuardType: securityConfig.aimGuardType,
+									aimGuardProjectId: securityConfig.aimGuardProjectId,
+									aprismApiType: securityConfig.aprismApiType,
+									aprismType: securityConfig.aprismType,
+									aprismExcludeLabels: securityConfig.aprismExcludeLabels,
+								}
+							: undefined;
 						endpoint = await endpoints.openai({
 							type: "openai",
 							baseURL: llmApiUrl || originalEndpoint.baseURL || "https://api.openai.com/v1",
@@ -650,6 +666,32 @@ export async function POST({
 							multimodal: originalEndpoint.multimodal,
 							useCompletionTokens: originalEndpoint.useCompletionTokens,
 							streamingSupported: originalEndpoint.streamingSupported ?? false,
+							securityApiConfig: securityApiConfigForEndpoint,
+						});
+					} else if (securityConfig && model.endpoints?.[0]?.type === "openai") {
+						// Security API config only (no LLM API override)
+						const originalEndpoint = model.endpoints[0];
+						const securityApiConfigForEndpoint = {
+							externalApi: securityConfig.externalApi,
+							aimGuardType: securityConfig.aimGuardType,
+							aimGuardProjectId: securityConfig.aimGuardProjectId,
+							aprismApiType: securityConfig.aprismApiType,
+							aprismType: securityConfig.aprismType,
+							aprismExcludeLabels: securityConfig.aprismExcludeLabels,
+						};
+						endpoint = await endpoints.openai({
+							type: "openai",
+							baseURL: originalEndpoint.baseURL || "https://api.openai.com/v1",
+							apiKey: originalEndpoint.apiKey || config.OPENAI_API_KEY || "sk-",
+							model,
+							completion: originalEndpoint.completion || "chat_completions",
+							defaultHeaders: originalEndpoint.defaultHeaders,
+							defaultQuery: originalEndpoint.defaultQuery,
+							extraBody: originalEndpoint.extraBody,
+							multimodal: originalEndpoint.multimodal,
+							useCompletionTokens: originalEndpoint.useCompletionTokens,
+							streamingSupported: originalEndpoint.streamingSupported ?? false,
+							securityApiConfig: securityApiConfigForEndpoint,
 						});
 					}
 
@@ -700,7 +742,7 @@ export async function POST({
 						await update(event);
 					}
 				} catch (llmError) {
-					// If LLM call failed, return dummy LLM response
+					// If LLM call failed, surface an error message to the chat UI instead of a silent failure
 					const err = llmError as Error;
 					const isAbortError =
 						err?.name === "AbortError" ||
@@ -708,58 +750,35 @@ export async function POST({
 						err?.message === "Request was aborted.";
 
 					if (!isAbortError && !ctrl.signal.aborted) {
-						// Generate dummy LLM response based on Security API response (or original message if no Security API)
-						// LLM 더미 응답: LLM API 호출 실패 시 반환
-						// Use Security API response content if available (which may be dummy response)
-						// This is the message that was actually sent to LLM
-						const messageForLlm = messagesForPrompt[messagesForPrompt.length - 1];
-						const userMessageContent =
-							messageForLlm?.from === "user" ? messageForLlm.content : undefined;
-						const dummyLlmResponse = userMessageContent
-							? `[LLM 더미 응답] LLM API가 사용 불가능하여 더미 응답을 반환합니다. 사용자 메시지: "${userMessageContent}"`
-							: "[LLM 더미 응답] LLM API가 사용 불가능하여 더미 응답을 반환합니다.";
+						const errorMessage = err?.message || "LLM 호출 중 알 수 없는 오류가 발생했습니다.";
 
-						// Stream the dummy LLM response token by token
-						const tokens = dummyLlmResponse.split(" ");
-						for (let i = 0; i < tokens.length; i++) {
-							if (ctrl.signal.aborted) {
-								break;
-							}
-							const token = i === 0 ? tokens[i] : " " + tokens[i];
-							await update({
-								type: MessageUpdateType.Stream,
-								token,
-							});
-							await new Promise((resolve) => setTimeout(resolve, 50));
-						}
+						// Mark this generation as errored so the client can stop loading
+						hasError = true;
 
-						// Send final answer
-						finalLlmResponse = {
-							text: dummyLlmResponse,
-							interrupted: false,
-						};
-						llmResponseTime = Date.now() - llmStartTime;
+						// Send status update so UI can show an error state and stop the spinner
+						await update({
+							type: MessageUpdateType.Status,
+							status: MessageUpdateStatus.Error,
+							message: errorMessage,
+						});
 
+						// Send the error text as the final assistant message content
 						await update({
 							type: MessageUpdateType.FinalAnswer,
-							text: dummyLlmResponse,
+							text: errorMessage,
 							interrupted: false,
 						});
 
-						// Send status update: LLM responded (더미)
-						if (securityConfig) {
-							await update({
-								type: MessageUpdateType.Status,
-								status: MessageUpdateStatus.LlmResponded,
-								message: "LLM 응답 수신 (더미)",
-							});
-						}
-
+						finalLlmResponse = {
+							text: errorMessage,
+							interrupted: false,
+						};
+						llmResponseTime = Date.now() - llmStartTime;
 						finalAnswerReceived = true;
-						llmIsDummy = true;
+
 						logger.warn(
 							{ conversationId: conv.id },
-							"LLM call failed, returning dummy response",
+							"LLM call failed, returning error message to client",
 							err
 						);
 					} else {
@@ -814,7 +833,10 @@ export async function POST({
 						}
 
 						// Handle aprism Risk Detector API: UNSAFE면 차단
-						if (outputResponse.data.type === "risk-detector" && outputResponse.data.data?.label === "UNSAFE") {
+						if (
+							outputResponse.data.type === "risk-detector" &&
+							outputResponse.data.data?.label === "UNSAFE"
+						) {
 							const blockMessage = "응답 내용이 보안 정책을 위반하여 표시할 수 없습니다.";
 							if (messageToWriteTo.content !== initialMessageContent) {
 								messageToWriteTo.content = blockMessage;
@@ -837,13 +859,19 @@ export async function POST({
 					const inputSecurityApiDuration = securityProxiedData?.timing?.input_security_api_duration
 						? securityProxiedData.timing.input_security_api_duration * 1000
 						: undefined;
-					const outputSecurityApiDuration = securityProxiedData?.timing?.output_security_api_duration
+					const outputSecurityApiDuration = securityProxiedData?.timing
+						?.output_security_api_duration
 						? securityProxiedData.timing.output_security_api_duration * 1000
 						: undefined;
 
 					// Extract input and output security API responses
 					const inputSecurityApiResponse = securityProxiedData?.input_security_api_response;
 					const outputSecurityApiResponse = securityProxiedData?.output_security_api_response;
+
+					// Extract error information
+					const inputSecurityApiError = securityProxiedData?.input_security_api_error;
+					const outputSecurityApiError = securityProxiedData?.output_security_api_error;
+					const handlerError = securityProxiedData?.handler_error;
 
 					// Extract LLM request from security_proxied_data (보안 검증 후 LLM에 전달된 수정된 요청)
 					// llm_request는 input_security_api_response가 있을 때만 포함됨
@@ -873,7 +901,10 @@ export async function POST({
 							: undefined,
 						securityResponseTime: securityApiResult.securityResponseTime,
 						inputSecurityApiResponse,
+						inputSecurityApiError,
 						outputSecurityApiResponse,
+						outputSecurityApiError,
+						handlerError,
 						inputSecurityApiDuration,
 						outputSecurityApiDuration,
 						securityProxiedLlmRequest,
@@ -904,7 +935,7 @@ export async function POST({
 					});
 				}
 			} catch (e) {
-				const err = e as Error;
+				const err = e as Error & { status?: number; body?: { message?: string } };
 				const isAbortError =
 					err?.name === "AbortError" ||
 					err?.name === "APIUserAbortError" ||
@@ -921,46 +952,42 @@ export async function POST({
 						});
 					}
 				} else {
-					// Return dummy response instead of error when generation fails
-					const dummyResponse =
-						"This is a dummy response. The actual model service is not available, but you can still test the UI functionality.";
+					// Surface a clear error message to the chat UI instead of a generic dummy response
+					const errorFromBody =
+						err.body && typeof err.body === "object" ? err.body.message : undefined;
+					const errorMessage =
+						errorFromBody || err.message || "메시지 생성 중 알 수 없는 오류가 발생했습니다.";
 
-					// Stream the dummy response token by token for realistic behavior
-					const tokens = dummyResponse.split(" ");
-					for (let i = 0; i < tokens.length; i++) {
-						if (ctrl.signal.aborted) {
-							break;
-						}
-						const token = i === 0 ? tokens[i] : " " + tokens[i];
-						await update({
-							type: MessageUpdateType.Stream,
-							token,
-						});
-						// Small delay between tokens for realistic streaming
-						await new Promise((resolve) => setTimeout(resolve, 50));
-					}
+					hasError = true;
 
-					// Send final answer
+					// Send status update so the client can stop loading and display the error
+					await update({
+						type: MessageUpdateType.Status,
+						status: MessageUpdateStatus.Error,
+						message: errorMessage,
+						statusCode: err.status,
+					});
+
+					// Also send the error text as the final assistant message
 					await update({
 						type: MessageUpdateType.FinalAnswer,
-						text: dummyResponse,
+						text: errorMessage,
 						interrupted: false,
 					});
+
 					finalAnswerReceived = true;
-					logger.warn(
+					logger.error(
 						{ conversationId: conv.id },
-						"Generation failed, returning dummy response",
+						"Generation failed, returning error message to client",
 						err
 					);
 				}
 			} finally {
-				// check if no output was generated
+				// If nothing was generated and no explicit error was flagged, keep the existing dummy fallback
 				if (!hasError && !abortedByUser && messageToWriteTo.content === initialMessageContent) {
-					// Return dummy response if no output was generated
 					const dummyResponse =
 						"This is a dummy response. The actual model service is not available, but you can still test the UI functionality.";
 
-					// Stream the dummy response token by token
 					const tokens = dummyResponse.split(" ");
 					for (let i = 0; i < tokens.length; i++) {
 						const token = i === 0 ? tokens[i] : " " + tokens[i];

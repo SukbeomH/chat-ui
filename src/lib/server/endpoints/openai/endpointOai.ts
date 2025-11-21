@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+/* global RequestInfo, RequestInit, Response, HeadersInit, Buffer */
 import { z } from "zod";
 import { openAICompletionToTextGenerationStream } from "./openAICompletionToTextGenerationStream";
 import { openAIChatToTextGenerationSingle } from "./openAIChatToTextGenerationStream";
@@ -11,6 +13,8 @@ import { createImageProcessorOptionsValidator, makeImageProcessor } from "../ima
 import type { MessageFile } from "$lib/types/Message";
 import type { EndpointMessage } from "../endpoints";
 import type { InferenceProvider } from "@huggingface/inference";
+import { buildSecurityApiHeaders, type SecurityApiConfig } from "$lib/server/security/securityApi";
+import { logger } from "$lib/server/logger";
 // uuid import removed (no tool call ids)
 
 export const endpointOAIParametersSchema = z.object({
@@ -43,6 +47,17 @@ export const endpointOAIParametersSchema = z.object({
 	/* enable use of max_completion_tokens in place of max_tokens */
 	useCompletionTokens: z.boolean().default(false),
 	streamingSupported: z.boolean().default(false), // Disabled for security handler compatibility
+	/* Security API configuration for Security Proxy Handler headers */
+	securityApiConfig: z
+		.object({
+			externalApi: z.enum(["AIM", "APRISM", "NONE"]).optional(),
+			aimGuardType: z.enum(["both", "input", "output"]).optional(),
+			aimGuardProjectId: z.string().optional(),
+			aprismApiType: z.enum(["identifier", "risk-detector"]).optional(),
+			aprismType: z.enum(["both", "input", "output"]).optional(),
+			aprismExcludeLabels: z.array(z.string()).optional(),
+		})
+		.optional(),
 });
 
 export async function endpointOai(
@@ -58,6 +73,7 @@ export async function endpointOai(
 		multimodal,
 		extraBody,
 		useCompletionTokens,
+		securityApiConfig,
 		// streamingSupported is unused but kept for schema compatibility
 		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		streamingSupported: _streamingSupported,
@@ -176,7 +192,7 @@ export async function endpointOai(
 		return response;
 	};
 
-	// Build security payload if enabled
+	// Build security payload if enabled (legacy support)
 	const securityEnabled = serverEnv.SECURITY_ENABLED === "true";
 	const securityPayload: Record<string, unknown> = securityEnabled
 		? {
@@ -188,13 +204,58 @@ export async function endpointOai(
 			}
 		: {};
 
+	// Build Security API headers for Security Proxy Handler (REQUEST_RESPONSE_SCHEMA.md)
+	let securityHeaders: HeadersInit = {};
+	if (
+		securityApiConfig &&
+		securityApiConfig.externalApi &&
+		securityApiConfig.externalApi !== "NONE"
+	) {
+		// Convert zod schema output to SecurityApiConfig format
+		const configForHeaders: SecurityApiConfig = {
+			enabled: true,
+			url: "", // Not used for header generation
+			externalApi: securityApiConfig.externalApi,
+			aimGuardType: securityApiConfig.aimGuardType,
+			aimGuardProjectId: securityApiConfig.aimGuardProjectId,
+			aprismApiType: securityApiConfig.aprismApiType,
+			aprismType: securityApiConfig.aprismType,
+			aprismExcludeLabels: securityApiConfig.aprismExcludeLabels,
+		};
+		const generatedHeaders = buildSecurityApiHeaders(configForHeaders);
+		// Exclude content-type as it's already handled by OpenAI SDK
+		securityHeaders = Object.fromEntries(
+			Object.entries(generatedHeaders).filter(([key]) => key.toLowerCase() !== "content-type")
+		);
+
+		// 디버깅: Security API 헤더가 OpenAI 요청에 추가됨
+		logger.debug(
+			{
+				baseURL,
+				securityHeaders: Object.keys(securityHeaders),
+				headerValues: Object.fromEntries(
+					Object.entries(securityHeaders).map(([key, value]) => [
+						key,
+						key.toLowerCase().includes("key") ? "[REDACTED]" : value,
+					])
+				),
+				externalApi: securityApiConfig.externalApi,
+			},
+			"Security API headers added to OpenAI request"
+		);
+	}
+
+	// Merge defaultHeaders with Security API headers
+	const mergedHeaders = {
+		...(config.PUBLIC_APP_NAME === "HuggingChat" && { "User-Agent": "huggingchat" }),
+		...defaultHeaders,
+		...securityHeaders,
+	};
+
 	const openai = new OpenAI({
 		apiKey: apiKey || "sk-",
 		baseURL,
-		defaultHeaders: {
-			...(config.PUBLIC_APP_NAME === "HuggingChat" && { "User-Agent": "huggingchat" }),
-			...defaultHeaders,
-		},
+		defaultHeaders: mergedHeaders,
 		defaultQuery,
 		fetch: customFetch,
 	});
@@ -247,13 +308,33 @@ export async function endpointOai(
 			preprompt,
 			generateSettings,
 			conversationId,
-			isMultimodal,
 			locals,
 			abortSignal,
 		}) => {
+			// Always treat the endpoint as multimodal-enabled so that image files are processed
+			const isMultimodalEffective = true;
+
 			// Format messages for the chat API, handling multimodal content if supported
 			let messagesOpenAI: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-				await prepareMessages(messages, imageProcessor, isMultimodal ?? model.multimodal);
+				await prepareMessages(messages, imageProcessor, isMultimodalEffective);
+
+			const messagesWithImages = messagesOpenAI.filter(
+				(m) =>
+					Array.isArray(m.content) &&
+					(m.content as OpenAI.Chat.Completions.ChatCompletionContentPart[]).some(
+						(part) => typeof part === "object" && part !== null && "image_url" in part
+					)
+			);
+
+			logger.debug(
+				{
+					model: model.id ?? model.name,
+					isMultimodal: isMultimodalEffective,
+					totalMessages: messagesOpenAI.length,
+					messagesWithImages: messagesWithImages.length,
+				},
+				"Prepared OpenAI chat messages (multimodal summary)"
+			);
 
 			// Check if a system message already exists as the first message
 			const hasSystemMessage = messagesOpenAI.length > 0 && messagesOpenAI[0]?.role === "system";
@@ -372,6 +453,14 @@ async function prepareFiles(
 	let imageParts: OpenAI.Chat.Completions.ChatCompletionContentPartImage[] = [];
 	if (isMultimodal && imageFiles.length > 0) {
 		const processedFiles = await Promise.all(imageFiles.map(imageProcessor));
+
+		logger.debug(
+			{
+				processedImageCount: processedFiles.length,
+				supportedMimes: processedFiles.map((f) => f.mime).slice(0, 5),
+			},
+			"Processed image files for OpenAI request"
+		);
 		imageParts = processedFiles.map((file) => ({
 			type: "image_url" as const,
 			image_url: {

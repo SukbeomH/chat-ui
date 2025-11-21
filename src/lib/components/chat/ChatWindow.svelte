@@ -33,9 +33,8 @@
 
 	import { isVirtualKeyboard } from "$lib/utils/isVirtualKeyboard";
 	import { requireAuthUser } from "$lib/utils/auth";
-	import ChatSettingsPanel from "./ChatSettingsPanel.svelte";
-	import CarbonSettings from "~icons/carbon/settings";
 	import type { Conversation } from "$lib/types/Conversation";
+	import ConversationHeader from "./ConversationHeader.svelte";
 
 	interface Props {
 		messages?: Message[];
@@ -54,6 +53,8 @@
 		draft?: string;
 		conversation?: Conversation | null;
 		onConversationUpdate?: (updates: Partial<Conversation>) => void;
+		onSettingsPanelOpen?: () => void;
+		onNewChat?: () => void;
 	}
 
 	/* eslint-disable prefer-const */
@@ -74,6 +75,8 @@
 		onshowAlternateMsg,
 		conversation = null,
 		onConversationUpdate,
+		onSettingsPanelOpen,
+		onNewChat,
 	}: Props = $props();
 	/* eslint-enable prefer-const */
 
@@ -356,6 +359,9 @@
 		<div
 			class="mx-auto flex h-full max-w-3xl flex-col gap-6 px-5 pt-6 sm:gap-8 xl:max-w-4xl xl:pt-10"
 		>
+			{#if conversation && messages.length > 0 && messages.some((m) => m.from === "user")}
+				<ConversationHeader {conversation} {currentModel} />
+			{/if}
 			{#if preprompt && preprompt !== currentModel.preprompt}
 				<SystemPromptModal preprompt={preprompt ?? ""} />
 			{/if}
@@ -404,19 +410,6 @@
 		<ScrollToPreviousBtn class="fixed bottom-48 right-4 lg:right-10" scrollNode={chatContainer} />
 
 		<ScrollToBottomBtn class="fixed bottom-36 right-4 lg:right-10" scrollNode={chatContainer} />
-
-		<!-- Settings Button -->
-		{#if !shared}
-			<button
-				onclick={() => {
-					settingsPanelOpen = !settingsPanelOpen;
-				}}
-				class="fixed bottom-24 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg transition-all hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 lg:right-10"
-				aria-label="Open settings"
-			>
-				<CarbonSettings class="h-5 w-5 text-gray-600 dark:text-gray-400" />
-			</button>
-		{/if}
 	</div>
 
 	<div
@@ -473,31 +466,32 @@
 		{/if}
 
 		<div class="w-full">
-			<div class="flex w-full *:mb-3">
-				{#if !loading && lastIsError && lastMessage && lastMessage.ancestors?.length}
-					<RetryBtn
-						classNames="ml-auto"
-						onClick={() => {
-							onretry?.({
-								id: lastMessage.id,
-							});
-						}}
-					/>
-				{/if}
-			</div>
-			<form
-				tabindex="-1"
-				aria-label={isFileUploadEnabled ? "file dropzone" : undefined}
-				onsubmit={(e) => {
-					e.preventDefault();
-					handleSubmit();
-				}}
-				class={{
-					"relative flex w-full max-w-4xl flex-1 items-center rounded-xl border bg-gray-100 dark:border-gray-700 dark:bg-gray-800": true,
-					"opacity-30": isReadOnly,
-					"max-sm:mb-4": focused && isVirtualKeyboard(),
-				}}
-			>
+			{#if messages.length > 0}
+				<div class="flex w-full *:mb-3">
+					{#if !loading && lastIsError && lastMessage && lastMessage.ancestors?.length}
+						<RetryBtn
+							classNames="ml-auto"
+							onClick={() => {
+								onretry?.({
+									id: lastMessage.id,
+								});
+							}}
+						/>
+					{/if}
+				</div>
+				<form
+					tabindex="-1"
+					aria-label={isFileUploadEnabled ? "file dropzone" : undefined}
+					onsubmit={(e) => {
+						e.preventDefault();
+						handleSubmit();
+					}}
+					class={{
+						"relative flex w-full max-w-4xl flex-1 items-center rounded-xl border bg-gray-100 dark:border-gray-700 dark:bg-gray-800": true,
+						"opacity-30": isReadOnly,
+						"max-sm:mb-4": focused && isVirtualKeyboard(),
+					}}
+				>
 				{#if onDrag && isFileUploadEnabled}
 					<FileDropzone bind:files bind:onDrag mimeTypes={activeMimeTypes} />
 				{:else}
@@ -616,17 +610,24 @@
 					<span>Generated content may be inaccurate or false.</span>
 				{/if}
 			</div>
+			{:else}
+				<!-- New Chat Button -->
+				{#if onNewChat && !shared}
+					<div class="flex w-full items-center justify-center pb-4">
+						<button
+							type="button"
+							onclick={() => onNewChat()}
+							class="rounded-lg bg-black px-6 py-3 text-base font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+						>
+							New chat
+						</button>
+					</div>
+				{/if}
+			{/if}
 		</div>
 	</div>
 </div>
 
-<!-- Settings Panel -->
-<ChatSettingsPanel
-	bind:open={settingsPanelOpen}
-	onclose={() => (settingsPanelOpen = false)}
-	{conversation}
-	{onConversationUpdate}
-/>
 
 <style lang="postcss">
 	.paste-glow {

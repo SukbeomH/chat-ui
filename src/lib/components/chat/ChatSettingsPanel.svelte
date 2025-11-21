@@ -24,9 +24,6 @@
 	const settings = useSettingsStore();
 
 	// Initialize conversation-specific settings from conversation meta or fallback to global settings
-	let conversationSecurityApiEnabled = $state(
-		conversation?.meta?.securityApiEnabled ?? $settings.securityApiEnabled ?? false
-	);
 	let conversationSecurityApiUrl = $state(
 		conversation?.meta?.securityApiUrl ?? $settings.securityApiUrl ?? ""
 	);
@@ -72,7 +69,6 @@
 		// Track conversation and its meta to detect changes
 		void conversation?.id;
 		void conversation?.model;
-		void conversation?.meta?.securityApiEnabled;
 		void conversation?.meta?.securityApiUrl;
 		void conversation?.meta?.securityExternalApi;
 		void conversation?.meta?.securityAimGuardType;
@@ -84,7 +80,6 @@
 		void conversation?.meta?.llmApiKey;
 
 		// Track global settings that are used as fallbacks
-		void $settings.securityApiEnabled;
 		void $settings.securityApiUrl;
 		void $settings.securityExternalApi;
 		void $settings.securityAimGuardType;
@@ -97,8 +92,6 @@
 		void $settings.customPrompts;
 
 		if (conversation) {
-			conversationSecurityApiEnabled =
-				conversation.meta?.securityApiEnabled ?? $settings.securityApiEnabled ?? false;
 			conversationSecurityApiUrl =
 				conversation.meta?.securityApiUrl ?? $settings.securityApiUrl ?? "";
 			conversationSecurityExternalApi =
@@ -125,7 +118,6 @@
 			conversationLlmApiKey = conversation.meta?.llmApiKey ?? $settings.llmApiKey ?? "";
 		} else {
 			// Reset to global settings when conversation is null
-			conversationSecurityApiEnabled = $settings.securityApiEnabled ?? false;
 			conversationSecurityApiUrl = $settings.securityApiUrl ?? "";
 			conversationSecurityExternalApi = $settings.securityExternalApi ?? "NONE";
 			conversationSecurityAimGuardType = $settings.securityAimGuardType ?? "both";
@@ -147,7 +139,6 @@
 		onConversationUpdate({
 			meta: {
 				...conversation.meta,
-				securityApiEnabled: conversationSecurityApiEnabled,
 				securityApiUrl: conversationSecurityApiUrl || undefined,
 				securityExternalApi: conversationSecurityExternalApi,
 				securityAimGuardType: conversationSecurityAimGuardType || undefined,
@@ -173,10 +164,15 @@
 		}, 300);
 	}
 
+	// Handle panel close
+	function handleClose() {
+		open = false;
+		onclose?.();
+	}
+
 	// Auto-save when conversation-specific settings change
 	$effect(() => {
 		// Track all conversation-specific settings
-		void conversationSecurityApiEnabled;
 		void conversationSecurityApiUrl;
 		void conversationSecurityExternalApi;
 		void conversationSecurityAimGuardType;
@@ -199,13 +195,11 @@
 		role="button"
 		tabindex="-1"
 		onclick={() => {
-			open = false;
-			onclose?.();
+			handleClose();
 		}}
 		onkeydown={(e) => {
 			if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
-				open = false;
-				onclose?.();
+				handleClose();
 			}
 		}}
 		transition:fly={{ opacity: 0, duration: 200 }}
@@ -245,8 +239,7 @@
 				</div>
 				<button
 					onclick={() => {
-						open = false;
-						onclose?.();
+						handleClose();
 					}}
 					class="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
 					aria-label="Close settings"
@@ -332,18 +325,6 @@
 						<div
 							class="space-y-3 rounded border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50"
 						>
-							<div class="flex items-start justify-between">
-								<div class="flex-1">
-									<div class="text-xs font-medium text-gray-700 dark:text-gray-300">
-										Enable Security API
-									</div>
-								</div>
-								<Switch
-									name="conversationSecurityApiEnabled"
-									bind:checked={conversationSecurityApiEnabled}
-								/>
-							</div>
-
 							<div>
 								<div class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
 									Security API Selection
@@ -381,7 +362,7 @@
 									</label>
 								</div>
 								<p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-									API 키는 서버 환경 변수에서 자동으로 읽습니다 (AIM_GUARD_KEY, APRISM_INFERENCE_KEY)
+									API 키는 백엔드에서 자동으로 처리됩니다
 								</p>
 							</div>
 
